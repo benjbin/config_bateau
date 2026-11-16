@@ -178,7 +178,7 @@ function applyState(boat, stage, s, prev = {}) {
   if (changed('upholsteryExterior')) tweenColor(M.upholsteryExterior, findItem('upholsteryExterior', s.upholsteryExterior).color);
   if (changed('ambientLight')) boat.setLedColor?.(findItem('ambientLight', s.ambientLight).color);
   if (changed('boatName')) boat.setName?.((s.boatName || '').trim() || 'DIÈDRE 29');
-  if (changed('ambiance')) stage.setAmbiance(s.ambiance);
+  if (changed('ambiance')) { stage.setAmbiance(s.ambiance); document.documentElement.dataset.scene = s.ambiance; }
   if (changed('setting')) { stage.setSetting(s.setting); setWetLine(s.setting === 'sea' ? 1 : 0); }
 }
 
@@ -287,6 +287,7 @@ try {
   stage.add(boat.root);
   stage.setBoat(boat);
   stage.setAmbiance(state.ambiance, { duration: 0 });
+  document.documentElement.dataset.scene = state.ambiance;
   stage.setSetting(state.setting, { duration: 0 });
   applyState(boat, stage, state, { ambiance: state.ambiance, setting: state.setting }); // tout le reste
   // pas d'animation de couleur au premier rendu

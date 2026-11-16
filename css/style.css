@@ -265,7 +265,7 @@ h1, h2, h3, h4, p, dl, dd, figure { margin: 0; }
 .stage { position: absolute; inset: 0; z-index: 0; }
 .stage canvas { display: block; width: 100% !important; height: 100% !important; outline: none; }
 .scrim { position: absolute; left: 0; right: 0; pointer-events: none; z-index: 1; }
-.scrim--top { top: 0; height: 230px; background: linear-gradient(rgba(var(--scrim), 0.82), rgba(var(--scrim), 0.35) 55%, rgba(var(--scrim), 0)); }
+.scrim--top { display: none; }
 .scrim--bottom { display: none; }
 
 .vhead { position: absolute; z-index: 2; top: 28px; left: var(--gutter); right: 120px; pointer-events: none; }
@@ -906,3 +906,9 @@ h1, h2, h3, h4, p, dl, dd, figure { margin: 0; }
   .sum__printlink { margin-top: 8mm; font-size: 9px; color: #6b7899; word-break: break-all; }
 }
 .loader__box polygon { transform-box: fill-box; }
+
+/* Titre lisible sur le ciel de nuit, quel que soit le thème de l'interface */
+:root[data-scene="night"] .vhead__title,
+:root[data-scene="night"] .vhead__name { color: #fff; }
+:root[data-scene="night"] .vhead__tagline,
+:root[data-scene="night"] .vhead__eyebrow { color: rgba(255, 255, 255, 0.78); }

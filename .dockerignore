@@ -1,0 +1,10 @@
+.git
+.gitignore
+.nojekyll
+.DS_Store
+.claude
+serve.py
+CONTRACT.md
+README.md
+Dockerfile
+.dockerignore

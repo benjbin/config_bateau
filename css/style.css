@@ -266,7 +266,7 @@ h1, h2, h3, h4, p, dl, dd, figure { margin: 0; }
 .stage canvas { display: block; width: 100% !important; height: 100% !important; outline: none; }
 .scrim { position: absolute; left: 0; right: 0; pointer-events: none; z-index: 1; }
 .scrim--top { top: 0; height: 230px; background: linear-gradient(rgba(var(--scrim), 0.82), rgba(var(--scrim), 0.35) 55%, rgba(var(--scrim), 0)); }
-.scrim--bottom { bottom: 0; height: 150px; background: linear-gradient(rgba(var(--scrim), 0), rgba(var(--scrim), 0.55)); }
+.scrim--bottom { display: none; }
 
 .vhead { position: absolute; z-index: 2; top: 28px; left: var(--gutter); right: 120px; pointer-events: none; }
 .vhead__eyebrow { margin-bottom: 14px; }

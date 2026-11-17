@@ -285,7 +285,7 @@ ui = initUI({
           ui.toast('Hissage des voiles…');
           // recul de caméra pour voir toute la voilure (mât de 38 m), sauf à l'intérieur ou en coupe
           if (!cutaway && !['salon', 'helm'].includes(stage.currentView)) {
-            stage.flyTo({ label: 'Voiles', pos: [44, 9, -50], target: [-1, 15.5, 0] }, { duration: 2.4 });
+            stage.flyTo({ label: 'Voiles', pos: [50, 8, -62], target: [-1, 17.5, 0] }, { duration: 2.4 });
             ui.setActiveView(null);
           }
         }

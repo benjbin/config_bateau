@@ -1831,18 +1831,85 @@ export function createStage(containerEl) {
     sc.updateProjectionMatrix();
   }
 
+  // --- Tenue à la mer : le bateau suit la MÊME houle que le shader d'océan (Gerstner, mêmes ondes/temps) ---
+  // Hauteur d'eau échantillonnée sur une grille couvrant la flottaison (28 m × 7,7 m) : la moyenne filtre
+  // naturellement les vagues courtes (un 29 m ne « sent » que la houle longue). Pilonnement, tangage et roulis
+  // = moyenne et pentes (moindres carrés) de cette surface, puis réponse dynamique du 2e ordre par degré de
+  // liberté (périodes propres d'un yacht de 29 m, roulis peu amorti) : retard, inertie et léger balancement résiduel.
+  const SEA_PTS = [];
+  for (const x of [-12, -8, -4, 0, 4, 8, 12]) {
+    const w = 3.3 * Math.min(1, (14.4 - x) / 9); // carène effilée vers l'étrave
+    for (const zf of [-1, -0.5, 0, 0.5, 1]) SEA_PTS.push([x, zf * w]);
+  }
+  const SEA_SXX = SEA_PTS.reduce((s, p) => s + p[0] * p[0], 0);
+  const SEA_SZZ = SEA_PTS.reduce((s, p) => s + p[1] * p[1], 0);
+  function waterHeight(px, pz) {
+    const W = oceanMat.uniforms.uWaves.value, amp = oceanMat.uniforms.uWaveAmp.value, t = time;
+    // Gerstner : la surface en (px, pz) vient d'un point d'origine déplacé horizontalement -> 2 itérations de point fixe
+    let ox = px, oz = pz;
+    for (let it = 0; it < 2; it++) {
+      let dx = 0, dz = 0;
+      for (let i = 0; i < N_GERSTNER; i++) {
+        const w = W[i], om = Math.sqrt(9.81 * w.z);
+        const th = w.z * (w.x * ox + w.y * oz) - om * t + i * 1.7;
+        const Q = Math.min(0.55 / (w.z * w.w * N_GERSTNER + 1e-4), 1);
+        dx += Q * w.w * w.x * Math.cos(th); dz += Q * w.w * w.y * Math.cos(th);
+      }
+      ox = px - dx * amp; oz = pz - dz * amp;
+    }
+    let h = 0;
+    for (let i = 0; i < N_GERSTNER; i++) {
+      const w = W[i], om = Math.sqrt(9.81 * w.z);
+      h += w.w * Math.sin(w.z * (w.x * ox + w.y * oz) - om * t + i * 1.7);
+    }
+    return h * amp;
+  }
+  // [position, vitesse] par degré de liberté ; pulsation propre w0 et amortissement réduit zeta
+  const DOF = {
+    heave: { w0: (2 * Math.PI) / 4.4, zeta: 0.38, x: 0, v: 0 },
+    pitch: { w0: (2 * Math.PI) / 3.9, zeta: 0.42, x: 0, v: 0 },
+    roll:  { w0: (2 * Math.PI) / 6.2, zeta: 0.13, x: 0, v: 0 },
+    yaw:   { w0: (2 * Math.PI) / 14, zeta: 0.6, x: 0, v: 0 },
+  };
+  let seaInit = false;
+  function seaTargets() {
+    const bx = boatBase.x, bz = boatBase.z;
+    let sh = 0, sxh = 0, szh = 0;
+    for (const [x, z] of SEA_PTS) {
+      const h = waterHeight(bx + x, bz + z);
+      sh += h; sxh += x * h; szh += z * h;
+    }
+    const n = SEA_PTS.length;
+    const sx = sxh / SEA_SXX, sz = szh / SEA_SZZ;      // pentes de la surface moyenne
+    return {
+      heave: sh / n,
+      pitch: Math.atan(sx) * 0.6,                    // proue qui monte quand l'eau est plus haute à l'avant
+      roll: -Math.atan(sz) * 1.15,                     // tribord (+z) qui monte quand l'eau y est plus haute
+      yaw: Math.atan(sz) * 0.08,                       // embardée minime induite par le roulis
+    };
+  }
+  function stepSea(dt) {
+    const tg = seaTargets();
+    if (!seaInit) { for (const k in DOF) { DOF[k].x = tg[k]; DOF[k].v = 0; } seaInit = true; return; }
+    const n = Math.max(1, Math.ceil(dt / (1 / 120)));
+    const h = Math.min(dt, 0.25) / n;
+    for (const k in DOF) {
+      const d = DOF[k];
+      for (let i = 0; i < n; i++) { // Euler semi-implicite (stable)
+        d.v += (d.w0 * d.w0 * (tg[k] - d.x) - 2 * d.zeta * d.w0 * d.v) * h;
+        d.x += d.v * h;
+      }
+    }
+  }
+
   function updateBoat(dt) {
     if (!boatRoot) return;
     const sea = 1 - easeInOutCubic(settingK);
-    const wa = amb.waveAmp;
-    const t = time;
-    const roll = (0.0072 * Math.sin(0.52 * t) + 0.0028 * Math.sin(1.21 * t + 1.3)) * wa * sea;
-    const pitch = (0.0040 * Math.sin(0.41 * t + 0.7) + 0.0016 * Math.sin(0.93 * t + 2.1)) * wa * sea;
-    const heave = (0.045 * Math.sin(0.6 * t + 0.4) + 0.018 * Math.sin(1.37 * t + 2.0)) * wa * sea;
+    stepSea(dt);
+    const roll = DOF.roll.x * sea, pitch = DOF.pitch.x * sea, heave = DOF.heave.x * sea, yaw = DOF.yaw.x * sea;
     // showroom : coque posée sur le sol (quille à y≈0), plus de bateau « coupé » flottant au-dessus du miroir
     boatRoot.position.set(boatBase.x, boatBase.y + heave + (keelDepth > 0.05 ? keelDepth + STUDIO_LIFT : 1.2) * easeInOutCubic(settingK), boatBase.z);
-    boatRoot.rotation.x = roll;
-    boatRoot.rotation.z = pitch;
+    boatRoot.rotation.set(roll, yaw, pitch, 'YXZ');
     const parts = boatApi && boatApi.parts;
     if (parts && parts.radar) parts.radar.rotation.y += dt * 0.6;
     if (parts && parts.underwaterLights) parts.underwaterLights.visible = amb.night > 0.5 && settingK < 0.5;

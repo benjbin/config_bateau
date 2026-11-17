@@ -9,14 +9,23 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/style.css?v=20261118a">
   <script>
     // thème mémorisé appliqué avant le premier rendu (évite le flash)
     try { var t = localStorage.getItem('d29-theme'); if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t); } catch (e) {}
   </script>
+  <!-- ?v= : version des modules (à incrémenter à chaque mise en ligne) — le serveur de production n'envoie pas
+       d'en-tête Cache-Control, le navigateur garderait sinon d'anciennes versions des scripts en cache -->
   <script type="importmap">{"imports":{
     "three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-    "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+    "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+    "./js/boat.js":"./js/boat.js?v=20261118a",
+    "./js/catamaran.js":"./js/catamaran.js?v=20261118a",
+    "./js/interior.js":"./js/interior.js?v=20261118a",
+    "./js/main.js":"./js/main.js?v=20261118a",
+    "./js/options.js":"./js/options.js?v=20261118a",
+    "./js/stage.js":"./js/stage.js?v=20261118a",
+    "./js/ui.js":"./js/ui.js?v=20261118a"}}</script>
 </head>
 <body>
   <noscript><p style="padding:24px;color:#fff;background:#0e1420">Ce configurateur nécessite JavaScript.</p></noscript>
@@ -48,6 +57,6 @@
   </script>
   <!-- Le reste de l'interface (barre haute, viewport, panneau, modales) est généré par js/ui.js dans #app -->
   <div id="app" class="app"></div>
-  <script type="module" src="js/main.js"></script>
+  <script type="module" src="js/main.js?v=20261118a"></script>
 </body>
 </html>

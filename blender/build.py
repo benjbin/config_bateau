@@ -20,6 +20,7 @@ ap = argparse.ArgumentParser()
 ap.add_argument('--parts', default='hull,superstructure,propulsion')
 ap.add_argument('--out', default=os.path.join(HERE, 'out'))
 ap.add_argument('--no-export', action='store_true')
+ap.add_argument('--draco', action='store_true', help='compression Draco du GLB (DRACOLoader côté web)')
 ap.add_argument('--name', default='diedre29', help='nom des fichiers de sortie (diedre29, cat24)')
 args = ap.parse_args(argv)
 os.makedirs(args.out, exist_ok=True)
@@ -83,5 +84,8 @@ if not args.no_export:
         filepath=os.path.join(args.out, args.name + '.glb'), export_format='GLB',
         export_apply=True, export_yup=True, export_texcoords=True, export_normals=True,
         export_materials='EXPORT', export_image_format='NONE', export_cameras=False, export_lights=False,
-        use_selection=False)
+        use_selection=False,
+        **(dict(export_draco_mesh_compression_enable=True, export_draco_mesh_compression_level=7,
+                export_draco_position_quantization=15, export_draco_normal_quantization=11,
+                export_draco_texcoord_quantization=14, export_draco_generic_quantization=12) if args.draco else {}))
 print('[build] ok ->', args.out)

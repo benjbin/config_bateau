@@ -34,7 +34,7 @@
 //     openSummary({ state, imageDataURL, shareURL? })   modal récapitulatif imprimable
 //     addToCompare({ state, imageDataURL })             tiroir comparaison (max 3)
 //     openGallery(index = 0)                             galerie des rendus officiels
-//     configCode(state)                 -> 'D29-XXXX-XXXX-XXX' (code lisible ; préfixe C24 pour le catamaran)
+//     configCode(state)                 -> 'D29-XXXX-XXXX-XXX' (code lisible ; préfixe S29 pour le catamaran)
 //     setModelBusy(progress0to1 | false) indicateur de chargement d'un modèle (GLB paresseux)
 //   }
 //   Modèles (options.MODELS) : sélecteur en tête du panneau -> onChange('model', id) ; titres, tagline, fiche

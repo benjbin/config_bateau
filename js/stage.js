@@ -29,18 +29,18 @@ const VIEWS = {
   helm:     { label: 'Pilotage', pos: [-3.5, 3.1, -1.0], target: [5.0, 2.2, 0.4], interior: true, lookRadius: 0.6, fov: 52 },
   cutaway:  { label: 'Coupe', pos: [15, 33, -27], target: [-3, 1.2, 0], panelShift: true },
 };
-// DIÈDRE 24 Catamaran (24,0 m × 10,2 m) : coques à z = ±3,75, salon x −4,8 → 5,4 (plancher 2,00, plafond 4,15),
-// hardtop 4,40, cockpit x −11,4 → −4,8, pilotage intérieur avant tribord (x 3,5 → 5,2, z 1,2 → 3,4)
-const VIEWS_CAT24 = {
-  exterior: { label: '360°', pos: [25, 6.4, -29], target: [0, 2.1, 0] },
-  profile:  { label: 'Profil', pos: [0, 3.4, -45], target: [0, 2.2, 0] },
-  bow:      { label: 'Étrave', pos: [28, 4.6, -10], target: [5, 2.0, 0] },
-  stern:    { label: 'Poupe', pos: [-30, 5.4, -7], target: [-10, 2.0, 0] },
-  top:      { label: 'Dessus', pos: [0, 46, 0.6], target: [0, 1.5, 0], panelShift: true },
-  aftdeck:  { label: 'Cockpit', pos: [-19.5, 4.3, -4.2], target: [-8.0, 2.7, 0.3], minDistance: 3.5 },
-  salon:    { label: 'Salon', pos: [4.4, 3.2, -2.6], target: [-6, 2.65, 0.9], interior: true, lookRadius: 0.6, fov: 50 },
-  helm:     { label: 'Pilotage', pos: [0.2, 3.25, -0.6], target: [5.4, 2.55, 2.4], interior: true, lookRadius: 0.6, fov: 52 },
-  cutaway:  { label: 'Coupe', pos: [13, 31, -25], target: [-1, 1.8, 0], panelShift: true },
+// SILLAGE 29 (28,7 m × 12,8 m, catamaran à voile) : coques à z = ±4,75, salon x −5,2 → 6,6 (plancher 2,40,
+// plafond 4,70), flybridge 5,00 + hardtop 7,55, mât x 7,6 (tête 38 m), cockpit x −13,7 → −5,2, pilotage avant tribord
+const VIEWS_CAT29 = {
+  exterior: { label: '360°', pos: [31, 7.6, -36], target: [0, 3.6, 0] },
+  profile:  { label: 'Profil', pos: [0, 4.6, -58], target: [0, 3.6, 0] },
+  bow:      { label: 'Étrave', pos: [33, 5.4, -12], target: [6, 2.9, 0] },
+  stern:    { label: 'Poupe', pos: [-36, 6.2, -8], target: [-12, 2.8, 0] },
+  top:      { label: 'Dessus', pos: [0, 66, 0.6], target: [0, 1.5, 0], panelShift: true },
+  aftdeck:  { label: 'Cockpit', pos: [-23.5, 4.8, -5.0], target: [-9.5, 3.3, 0.3], minDistance: 3.5 },
+  salon:    { label: 'Salon', pos: [5.4, 3.95, -3.2], target: [-6, 3.25, 1.0], interior: true, lookRadius: 0.6, fov: 50 },
+  helm:     { label: 'Pilotage', pos: [0.6, 3.9, -0.8], target: [6.6, 3.15, 3.0], interior: true, lookRadius: 0.6, fov: 52 },
+  cutaway:  { label: 'Coupe', pos: [16, 38, -30], target: [-1, 2.4, 0], panelShift: true },
 };
 
 // ---------------------------------------------------------------------------
@@ -75,24 +75,26 @@ const HULL_PROFILES = {
     cut: [4.4, 2.45],
     nav: null,                            // feux calculés d'après la boîte de la superstructure (historique)
   },
-  cat24: {
-    views: VIEWS_CAT24,
-    // deux coques fines (z = ±3,75), flottaison 23,4 m : 7 couples × 3 points par coque
-    seaPts: seaGrid([-11, -7.5, -4, -0.5, 3, 6.5, 10.2], (x) => 0.95 * Math.min(1, (12 - x) / 5), [-3.75, 3.75]),
-    // catamaran : grande stabilité de forme -> roulis court (raide) et bien amorti, tangage un peu plus vif
-    dof: { heave: [3.6, 0.42], pitch: [3.3, 0.45], roll: [3.4, 0.36], yaw: [12, 0.6] },
-    gain: { pitch: 0.6, roll: 0.95, yaw: 0.05 },
-    ell: [12.6, 1.55, 3.75],
-    ends: [6.5, 11.0, -9.0, -12.2],
-    spillA: [0.3, 5.2, 5.5, 1.2],
-    spillB: [-12.6, 1.4, 1.6, 3.75],
+  cat29: {
+    views: VIEWS_CAT29,
+    // deux coques (z = ±4,75), flottaison ~28 m : 7 couples × 3 points par coque
+    seaPts: seaGrid([-13, -9, -4.5, 0, 4.5, 9, 12.6], (x) => 1.15 * Math.min(1, (14.35 - x) / 6), [-4.75, 4.75]),
+    // catamaran plus grand et plus lourd que le 24 m : périodes un peu plus longues, roulis raide bien amorti
+    dof: { heave: [4.0, 0.42], pitch: [3.8, 0.45], roll: [3.9, 0.36], yaw: [13, 0.6] },
+    gain: { pitch: 0.55, roll: 0.9, yaw: 0.05 },
+    ell: [15.0, 1.85, 4.75],
+    ends: [8.0, 13.4, -10.8, -14.6],
+    spillA: [0.4, 6.4, 6.8, 1.3],
+    spillB: [-15.0, 1.6, 2.0, 4.75],
     glowSpread: 0.03,
-    cradle: { stations: [-5.6, 0.4, 6.2], hulls: [-3.75, 3.75], sideZ: 0.62, keelPad: [0.56, 0.34], sidePad: [0.5, 0.42] },
-    contact: [30, 15],
-    interiorLight: [0.3, 3.1, 0],
-    cut: [4.6, 2.75],
-    nav: { port: [5.0, 2.7, -4.12], stbd: [5.0, 2.7, 4.12], mast: [-0.9, 4.75, 0], stern: [-11.45, 2.25, 0] },
+    cradle: { stations: [-7.0, 0.5, 7.4], hulls: [-4.75, 4.75], sideZ: 0.78, keelPad: [0.6, 0.36], sidePad: [0.55, 0.46] },
+    contact: [36, 18],
+    interiorLight: [0.4, 3.6, 0],
+    cut: [5.3, 3.15],
+    shadowTop: 15,                        // mât de 38 m : la caméra d'ombre ne cadre que le bas (résolution)
+    nav: { port: [6.0, 3.1, -5.1], stbd: [6.0, 3.1, 5.1], mast: [7.4, 38.2, 0], stern: [-13.75, 2.6, 0] },
   },
+
 };
 
 // ---------------------------------------------------------------------------
@@ -1931,6 +1933,7 @@ export function createStage(containerEl) {
         // tirant d'eau mesuré (hors heave/lift) : en showroom, la quille repose sur le sol miroir
         keelDepth = Math.max(0, -boatBoxRel.min.y);
         boatBoxRel.min.y = Math.max(boatBoxRel.min.y, -1.5); // la carène immergée ne projette rien de visible
+        if (prof.shadowTop) boatBoxRel.max.y = Math.min(boatBoxRel.max.y, prof.shadowTop);
         boatBoxRel.expandByScalar(0.25); // roulis / tangage
       }
     }

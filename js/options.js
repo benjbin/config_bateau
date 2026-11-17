@@ -2,7 +2,7 @@
 // Les ids sont le contrat entre UI (ui.js), application 3D (main.js) et URL de partage.
 // swatch : CSS background de la pastille. Les autres props sont appliquées au matériau 3D.
 
-// Modèles du configurateur : clé d'état `model` (URL #model=cat24 ; défaut d29, absent de l'URL).
+// Modèles du configurateur : clé d'état `model` (URL #model=cat29 ; défaut d29, absent de l'URL).
 // code : préfixe du code de configuration ; length : affiché après la tagline ; type : sous-titre du sélecteur.
 export const MODEL = {
   id: 'd29',
@@ -26,26 +26,27 @@ export const MODEL = {
 
 export const MODELS = {
   d29: MODEL,
-  cat24: {
-    id: 'cat24',
-    code: 'C24',
-    type: 'Catamaran',
-    length: '24,0 m',
-    name: 'DIÈDRE 24',
+  cat29: {
+    id: 'cat29',
+    code: 'S29',
+    type: 'Catamaran à voile',
+    length: '28,7 m',
+    name: 'SILLAGE 29',
     studio: 'NEOKROME',
-    tagline: 'Catamaran électrique',
+    tagline: 'Super-catamaran à voile électrique',
     specs: [
-      ['Longueur hors tout', '24,0 m'],
-      ['Largeur hors tout', '10,2 m'],
-      ['Architecture', 'Catamaran, deux coques à étrave verticale'],
+      ['Longueur hors tout', '28,7 m'],
+      ['Largeur hors tout', '12,8 m'],
+      ['Architecture', 'Catamaran à voile, deux coques à étrave verticale'],
+      ['Gréement', 'Sloop, mât carbone (≈ 38 m), bôme à enrouleur, foc sur enrouleur'],
       ['Propulsion', 'Électrique, 2 pods (un par coque), hélices contrarotatives'],
-      ['Manœuvre', 'Propulseur d’étrave dans chaque coque'],
-      ['Énergie', 'Hardtop solaire, panneaux intégrés'],
-      ['Salon', 'Salon de pont panoramique, pilotage intérieur'],
-      ['Extérieur', 'Cockpit abrité, pont avant avec bain de soleil, 2 plateformes de bain'],
+      ['Énergie', 'Hardtop solaire du flybridge, panneaux intégrés'],
+      ['Ponts', 'Salon de pont panoramique, flybridge avec poste de barre, bar et salon'],
+      ['Extérieur', 'Cockpit abrité, lounge avant, plateforme de bain arrière, terrasses latérales rabattables'],
     ],
-    pending: 'Puissance, capacité des batteries, surface solaire, vitesse, autonomie, déplacement et tirant d’eau : à préciser en avant-projet.',
+    pending: 'Surface de voile, puissance, batteries, surface solaire, vitesse, autonomie, déplacement et tirant d’eau : à préciser en avant-projet.',
   },
+
 };
 export const MODEL_IDS = Object.keys(MODELS);
 
@@ -190,7 +191,7 @@ export const DEFAULT_STATE = {
 };
 
 // libellés de vues propres à un modèle (mêmes ids : profils de caméra de stage.js)
-export const VIEW_LABELS = { cat24: { aftdeck: 'Cockpit' } };
+export const VIEW_LABELS = { cat29: { aftdeck: 'Cockpit' } };
 export function viewChipsFor(model) {
   const o = VIEW_LABELS[model] || {};
   return VIEW_CHIPS.map((c) => ({ ...c, label: o[c.id] || c.label }));
@@ -211,7 +212,7 @@ export const GALLERY = [
 ];
 
 // rendus officiels par modèle (le catamaran n'en a pas encore : bouton « Galerie » masqué)
-export const GALLERIES = { d29: GALLERY, cat24: [] };
+export const GALLERIES = { d29: GALLERY, cat29: [] };
 
 export function findItem(key, id) {
   if (key === 'model') return MODELS[id] || null;

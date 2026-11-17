@@ -1,10 +1,13 @@
-// DIÈDRE 29 / DIÈDRE 24 Catamaran — orchestration : options -> modèle 3D -> scène -> UI
+// DIÈDRE 29 / SILLAGE 29 Catamaran — orchestration : options -> modèle 3D -> scène -> UI
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+// GLB compressés Draco (SILLAGE 29) : décodeur WASM servi par le même CDN que three.js, chargé à la demande
+const draco = new DRACOLoader().setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/libs/draco/gltf/');
 import * as options from './options.js';
 import { GROUPS, DEFAULT_STATE, MODELS, findItem, defaultsFor } from './options.js';
 import { buildBoat, refineBoatMaterials, setLedGain, setWetLine } from './boat.js';
-import { buildCatamaran, CAT24_URL } from './catamaran.js';
+import { buildCatamaran, CAT29_URL } from './catamaran.js';
 import { setInteriorDayFactor, releaseInteriorDayFactor } from './interior.js';
 import { createStage } from './stage.js';
 import { initUI } from './ui.js';
@@ -242,7 +245,7 @@ ui = initUI({
       case 'screenshot': {
         const a = document.createElement('a');
         a.href = stage.screenshot();
-        a.download = `${state.model === 'cat24' ? 'DIEDRE24' : 'DIEDRE29'}-${(state.boatName || 'config').replace(/[^\w-]+/g, '_')}.png`;
+        a.download = `${state.model === 'cat29' ? 'SILLAGE29' : 'DIEDRE29'}-${(state.boatName || 'config').replace(/[^\w-]+/g, '_')}.png`;
         a.click();
         ui.toast('Capture enregistrée');
         break;
@@ -299,13 +302,13 @@ ui.setLoading(0.1);
 // DIÈDRE 29 : extérieur modélisé sous Blender (coque, pont, superstructure, vitrages, peau du toit), GLB préchargé
 // AVANT buildBoat (synchrone). Échec (réseau, fichier absent, GLB invalide) → modèle procédural complet de boat.js.
 // ?procedural dans l'URL force le modèle procédural (comparaison, diagnostic).
-// DIÈDRE 24 Catamaran : tout le bateau est dans assets/cat24.glb (pas de repli procédural), chargé seulement quand
+// SILLAGE 29 (catamaran à voile) : tout le bateau est dans assets/cat29.glb (pas de repli procédural), chargé seulement quand
 // on le choisit (ou si l'URL partagée l'indique).
-const MODEL_GLB = { d29: 'assets/diedre29-exterior.glb', cat24: CAT24_URL };
+const MODEL_GLB = { d29: 'assets/diedre29-exterior.glb', cat29: CAT29_URL };
 function loadModelGLB(id, onProgress) {
   if (id === 'd29' && new URLSearchParams(location.search).has('procedural')) return Promise.resolve(null);
   const url = MODEL_GLB[id];
-  return new GLTFLoader().loadAsync(url, (e) => {
+  return new GLTFLoader().setDRACOLoader(draco).loadAsync(url, (e) => {
     if (e.lengthComputable && e.total) onProgress?.(e.loaded / e.total);
   }).then((gltf) => gltf.scene, (err) => {
     if (id !== 'd29') throw err;
@@ -315,7 +318,7 @@ function loadModelGLB(id, onProgress) {
 }
 function buildModel(id, exterior) {
   let b;
-  if (id === 'cat24') b = buildCatamaran({ exterior });
+  if (id === 'cat29') b = buildCatamaran({ exterior });
   else {
     try {
       b = buildBoat({ exterior });
@@ -344,7 +347,7 @@ function disposeBoat(b) {
   geos.forEach((g) => g.dispose());
   mats.forEach((m) => m.dispose());
   texs.forEach((t) => t.dispose());
-  if (b.model !== 'cat24') releaseInteriorDayFactor();
+  if (b.model !== 'cat29') releaseInteriorDayFactor();
 }
 function disposeScene(sc) {
   sc?.traverse((o) => {

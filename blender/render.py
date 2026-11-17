@@ -19,6 +19,8 @@ ap.add_argument('--cams', default='bow34,profile,stern34,top,detail')
 ap.add_argument('--samples', type=int, default=64)
 ap.add_argument('--res', default='1280x720')
 ap.add_argument('--nowater', action='store_true')
+ap.add_argument('--camfile', default='', help='fichier python définissant CAMS (remplace/complète les caméras)')
+ap.add_argument('--hide', default='', help='collections à masquer, ex. roof,upperGlass')
 args = ap.parse_args(argv)
 os.makedirs(args.out, exist_ok=True)
 
@@ -34,7 +36,17 @@ CAMS = {  # nom: (position three, cible three, focale mm)
     'thruster':((13.8, -1.3, 3.4), (10.6, -0.2, 0.7), 50),
 }
 
+if args.camfile:
+    _ns = {}
+    exec(open(args.camfile).read(), _ns)
+    CAMS.update(_ns['CAMS'])
+
 sc = bpy.context.scene
+for _g in [g.strip() for g in args.hide.split(',') if g.strip()]:
+    _c = bpy.data.collections.get(_g)
+    if _c is not None:
+        _c.hide_render = True
+sc.render.film_transparent = False
 sc.render.engine = 'CYCLES'
 try:
     prefs = bpy.context.preferences.addons['cycles'].preferences

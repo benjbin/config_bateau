@@ -3,3 +3,4 @@ __pycache__/
 blender/out/
 *.blend1
 blender/out_cat/
+blender/out_s29*/

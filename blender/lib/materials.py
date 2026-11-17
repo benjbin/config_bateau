@@ -27,6 +27,8 @@ SPECS = {
     'caulk':          (0x0b0a09, 0.0, 0.5, 0.0, None, 1.0),
     'metalDark':      (0x2a2c2f, 0.85, 0.37, 0.0, None, 1.0),
     'upholsteryExterior': (0xe6e0d3, 0.0, 0.9, 0.0, None, 1.0),
+    'propBronze':     (0xb5895a, 1.0, 0.22, 0.0, None, 1.0),
+    'zinc':           (0x9a9c9e, 0.6, 0.55, 0.0, None, 1.0),
     'navRed':         (0x300000, 0.0, 0.4, 0.0, 0xff2a1a, 1.0),
     'navGreen':       (0x002a10, 0.0, 0.4, 0.0, 0x1aff6a, 1.0),
     'navWhite':       (0x303030, 0.0, 0.4, 0.0, 0xffffff, 1.0),

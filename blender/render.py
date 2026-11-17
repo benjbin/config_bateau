@@ -18,6 +18,7 @@ ap.add_argument('--out', default=os.path.join(HERE, 'out', 'renders'))
 ap.add_argument('--cams', default='bow34,profile,stern34,top,detail')
 ap.add_argument('--samples', type=int, default=64)
 ap.add_argument('--res', default='1280x720')
+ap.add_argument('--nowater', action='store_true')
 args = ap.parse_args(argv)
 os.makedirs(args.out, exist_ok=True)
 
@@ -28,6 +29,9 @@ CAMS = {  # nom: (position three, cible three, focale mm)
     'top':     ((0.5, 40, 0.01), (0.5, 0, 0), 50),
     'detail':  ((15.5, 2.2, 5.5), (12.5, 1.5, 1.6), 85),
     'deck':    ((10, 6.5, 6), (4, 2.0, 0), 35),
+    'pods':    ((-17.5, -1.7, 6.0), (-11.3, -0.85, 0.7), 40),
+    'podclose':((-14.2, -1.25, 3.4), (-11.9, -0.95, 1.4), 50),
+    'thruster':((13.8, -1.3, 3.4), (10.6, -0.2, 0.7), 50),
 }
 
 sc = bpy.context.scene
@@ -73,6 +77,8 @@ bump = wm.node_tree.nodes.new('ShaderNodeBump'); bump.inputs['Strength'].default
 wm.node_tree.links.new(noise.outputs['Fac'], bump.inputs['Height'])
 wm.node_tree.links.new(bump.outputs['Normal'], b.inputs['Normal'])
 water.data.materials.append(wm)
+if args.nowater:
+    water.hide_render = True
 
 cam_data = bpy.data.cameras.new('cam'); cam = bpy.data.objects.new('cam', cam_data)
 sc.collection.objects.link(cam); sc.camera = cam

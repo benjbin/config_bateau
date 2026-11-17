@@ -1147,6 +1147,9 @@ export function buildBoat(opts = {}) {
     screens: phys({ color: 0x05080d, emissive: 0xbfd8ff, emissiveMap: screenTex, emissiveIntensity: 1.4, roughness: 0.15, clearcoat: 1, envMapIntensity: 0.25 }),
     ledStrip: new GainBasicMaterial({ color: 0xffb86b }), // gain jour/nuit (setLedGain, main.js)
     underwaterLight: phys({ color: 0x0a0a0a, emissive: 0x6fdcff, emissiveIntensity: 3 }),
+    // propulsion (GLB Blender) : hélices en bronze nickel-aluminium poli, anodes zinc mat
+    propBronze: phys({ color: 0xb5895a, metalness: 1, roughness: 0.2, envMapIntensity: 1.2, side: THREE.DoubleSide }),
+    zinc: phys({ color: 0x9a9c9e, metalness: 0.55, roughness: 0.55, envMapIntensity: 0.8 }),
     navRed: phys({ color: 0x300000, emissive: 0xff2a1a, emissiveIntensity: 2 }),
     navGreen: phys({ color: 0x002a10, emissive: 0x1aff6a, emissiveIntensity: 2 }),
     navWhite: phys({ color: 0x303030, emissive: 0xffffff, emissiveIntensity: 1.5 }),

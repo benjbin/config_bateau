@@ -17,7 +17,7 @@ import materials  # noqa: E402
 
 argv = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
 ap = argparse.ArgumentParser()
-ap.add_argument('--parts', default='hull,superstructure')
+ap.add_argument('--parts', default='hull,superstructure,propulsion')
 ap.add_argument('--out', default=os.path.join(HERE, 'out'))
 ap.add_argument('--no-export', action='store_true')
 args = ap.parse_args(argv)

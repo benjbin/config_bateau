@@ -10,6 +10,8 @@ let rectLibReady = false;
 // émissifs intérieurs suivant le facteur nuit lissé de main.js (k = 1 nuit : aspect inchangé ; k = 0 plein jour) :
 // lueurs LED ×0,35, plafond lumineux ×0,25, écrans ×0,6 (≈2,0 → 1,2) — plus de halos chauds dans le reflet de l'eau le jour
 let dayMats = null;
+// bascule de modèle (main.js) : libère les références aux matériaux du DIÈDRE 29 retiré de la scène
+export function releaseInteriorDayFactor() { dayMats = null; }
 export function setInteriorDayFactor(k) {
   if (!dayMats) return;
   k = Math.max(0, Math.min(1, k));
@@ -55,7 +57,7 @@ function tex(c, srgb = true, rep = true) {
 // tuile de 0,35 m sur 512 px (≈0,7 mm/px) : pores de 1 à 3 mm
 // v2 : grain « pebble » = cellules de Voronoï bombées séparées par de fins plis (tuile 0,35 m sur 1024 px ≈ 0,34 mm/px,
 // cellules de 1,5 à 2,5 mm), lignes de croissance ondulées à ~1,5 cm, pores ; rugosité : plis plus mats, sommets lustrés
-function makeLeatherMaps() {
+export function makeLeatherMaps() {
   const S = 1024, G = 6, NG = Math.floor(S / G), r = rnd(7); // grille de germes jitterée (6 px ≈ 2 mm)
   const sx = new Float32Array(NG * NG), sy = new Float32Array(NG * NG), sh = new Float32Array(NG * NG);
   for (let i = 0; i < NG * NG; i++) { sx[i] = (i % NG + 0.1 + 0.8 * r()) * G; sy[i] = (Math.floor(i / NG) + 0.1 + 0.8 * r()) * G; sh[i] = r(); }
@@ -113,7 +115,7 @@ float sgN(vec3 x) { vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f)
 float sgF(vec3 p) { return 0.55 * sgN(p) + 0.3 * sgN(p * 2.13 + 7.1) + 0.15 * sgN(p * 4.37 + 3.3); }
 `;
 // opts : tone (amplitude de variation d'albedo), toneScale (1/m), rough (amplitude de variation de rugosité), crease (plis aux flexions)
-function softGoodsShader(mat, opts) {
+export function softGoodsShader(mat, opts) {
   const { tone = 0.06, toneScale = 3.0, rough = 0.0, crease = 0, sheenTint = false, albedo = 1, slub = 0 } = opts;
   mat.onBeforeCompile = (sh) => {
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vSgW;')
@@ -473,7 +475,7 @@ function makeBookTexture() {
   g.fillStyle = 'rgba(255,255,255,0.85)'; g.font = '300 26px Helvetica, Arial, sans-serif'; g.fillText('HORIZONS', 24, 44);
   return tex(c, true, false);
 }
-function screenCanvas(kind) {
+export function screenCanvas(kind) {
   const W = 2048, H = 512;
   const c = document.createElement('canvas'); c.width = W; c.height = H;
   const g = c.getContext('2d');

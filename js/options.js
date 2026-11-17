@@ -2,7 +2,13 @@
 // Les ids sont le contrat entre UI (ui.js), application 3D (main.js) et URL de partage.
 // swatch : CSS background de la pastille. Les autres props sont appliquées au matériau 3D.
 
+// Modèles du configurateur : clé d'état `model` (URL #model=cat24 ; défaut d29, absent de l'URL).
+// code : préfixe du code de configuration ; length : affiché après la tagline ; type : sous-titre du sélecteur.
 export const MODEL = {
+  id: 'd29',
+  code: 'D29',
+  type: 'Monocoque',
+  length: '28,8 m',
   name: 'DIÈDRE 29',
   studio: 'NEOKROME',
   tagline: 'Concept de yacht électrique',
@@ -17,6 +23,31 @@ export const MODEL = {
   ],
   pending: 'Puissance, batteries, vitesse, autonomie, recharge, déplacement et tirant d’eau : à préciser en avant-projet.',
 };
+
+export const MODELS = {
+  d29: MODEL,
+  cat24: {
+    id: 'cat24',
+    code: 'C24',
+    type: 'Catamaran',
+    length: '24,0 m',
+    name: 'DIÈDRE 24',
+    studio: 'NEOKROME',
+    tagline: 'Catamaran électrique',
+    specs: [
+      ['Longueur hors tout', '24,0 m'],
+      ['Largeur hors tout', '10,2 m'],
+      ['Architecture', 'Catamaran, deux coques à étrave verticale'],
+      ['Propulsion', 'Électrique, 2 pods (un par coque), hélices contrarotatives'],
+      ['Manœuvre', 'Propulseur d’étrave dans chaque coque'],
+      ['Énergie', 'Hardtop solaire, panneaux intégrés'],
+      ['Salon', 'Salon de pont panoramique, pilotage intérieur'],
+      ['Extérieur', 'Cockpit abrité, pont avant avec bain de soleil, 2 plateformes de bain'],
+    ],
+    pending: 'Puissance, capacité des batteries, surface solaire, vitesse, autonomie, déplacement et tirant d’eau : à préciser en avant-projet.',
+  },
+};
+export const MODEL_IDS = Object.keys(MODELS);
 
 export const GROUPS = [
   {
@@ -143,6 +174,7 @@ export const VIEW_CHIPS = [
 ];
 
 export const DEFAULT_STATE = {
+  model: 'd29',
   hull: 'anthracite',
   hullFinish: 'satin',
   accent: 'titane',
@@ -157,6 +189,19 @@ export const DEFAULT_STATE = {
   setting: 'sea',
 };
 
+// libellés de vues propres à un modèle (mêmes ids : profils de caméra de stage.js)
+export const VIEW_LABELS = { cat24: { aftdeck: 'Cockpit' } };
+export function viewChipsFor(model) {
+  const o = VIEW_LABELS[model] || {};
+  return VIEW_CHIPS.map((c) => ({ ...c, label: o[c.id] || c.label }));
+}
+
+// valeurs par défaut d'un modèle (nom de coque = nom du modèle)
+export function defaultsFor(model) {
+  const m = MODELS[model] ? model : 'd29';
+  return { ...DEFAULT_STATE, model: m, boatName: MODELS[m].name };
+}
+
 export const GALLERY = [
   { src: 'assets/render-profile.jpg', label: 'Profil bâbord' },
   { src: 'assets/render-bow.jpg', label: 'Rendu officiel' },
@@ -165,7 +210,11 @@ export const GALLERY = [
   { src: 'assets/render-salon2.jpg', label: 'Salon et pont arrière' },
 ];
 
+// rendus officiels par modèle (le catamaran n'en a pas encore : bouton « Galerie » masqué)
+export const GALLERIES = { d29: GALLERY, cat24: [] };
+
 export function findItem(key, id) {
+  if (key === 'model') return MODELS[id] || null;
   const g = GROUPS.find((x) => x.key === key);
   return g && g.items ? g.items.find((i) => i.id === id) : null;
 }

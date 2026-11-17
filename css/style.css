@@ -465,6 +465,34 @@ h1, h2, h3, h4, p, dl, dd, figure { margin: 0; }
   font-family: var(--font-display); font-weight: 800; font-size: 28px; line-height: 0.9;
   letter-spacing: -0.03em; text-transform: uppercase;
 }
+/* sélecteur de modèle (DIÈDRE 29 monocoque / DIÈDRE 24 catamaran) */
+.models { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 8px; margin-top: 18px; }
+.model {
+  position: relative; overflow: hidden; display: grid; grid-template-columns: 1fr auto; align-items: baseline;
+  column-gap: 8px; padding: 10px 12px 11px; border-radius: var(--r-md); text-align: left;
+  background: var(--surface); box-shadow: inset 0 0 0 1px var(--line);
+  transition: box-shadow var(--t) var(--ease), background-color var(--t) var(--ease), transform var(--t) var(--ease);
+}
+.model:hover { box-shadow: inset 0 0 0 1px var(--line-2), var(--shadow-sm); transform: translateY(-1px); }
+.model[aria-checked="true"] { box-shadow: inset 0 0 0 2px var(--ring); background: linear-gradient(var(--accent-soft), var(--accent-soft)), var(--surface); }
+.model__type { grid-column: 1 / -1; font-family: var(--font-display); font-size: 10.5px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-3); }
+.model[aria-checked="true"] .model__type { color: var(--accent); }
+.model__name { margin-top: 3px; font-family: var(--font-display); font-size: 16px; font-weight: 800; letter-spacing: -0.02em; text-transform: uppercase; white-space: nowrap; }
+.model__len { font-size: 12px; font-weight: 600; color: var(--text-2); white-space: nowrap; }
+.model__load { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; opacity: 0; transition: opacity var(--t); }
+.model__load i { display: block; height: 100%; background: var(--blue); transform: scaleX(0); transform-origin: left; transition: transform 200ms linear; }
+.model.is-loading .model__load { opacity: 1; }
+.models[aria-busy="true"] .model { cursor: progress; }
+/* pastille de chargement sur la vue 3D */
+.mload {
+  position: absolute; z-index: 5; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  display: grid; gap: 10px; min-width: 240px; padding: 14px 18px; border-radius: var(--r-md);
+  font-family: var(--font-display); font-size: 13px; font-weight: 600; color: var(--text); text-align: center;
+}
+.mload[hidden] { display: none; }
+.mload__bar { display: block; height: 2px; background: var(--line); border-radius: 2px; overflow: hidden; }
+.mload__bar i { display: block; height: 100%; background: var(--blue); transform: scaleX(0); transform-origin: left; transition: transform 200ms linear; }
+
 .ptabs { display: flex; gap: 22px; margin-top: 20px; overflow-x: auto; scrollbar-width: none; }
 .ptabs::-webkit-scrollbar { display: none; }
 .ptab {
@@ -828,6 +856,10 @@ h1, h2, h3, h4, p, dl, dd, figure { margin: 0; }
   .panel__head::before { display: none; }
   .panel__titles { display: none; }
   .ptabs { margin-top: 0; gap: 18px; }
+  .models { margin: 0 0 4px; gap: 6px; }
+  .model { padding: 7px 10px 8px; }
+  .model__type { font-size: 9.5px; }
+  .model__name { font-size: 14px; margin-top: 1px; }
   .panel__body { padding: 0 16px 16px; }
   .panel__foot { padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); }
   .foot__meta { display: none; }

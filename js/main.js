@@ -1,21 +1,26 @@
-// DIÈDRE 29 — orchestration : options -> modèle 3D -> scène -> UI
+// DIÈDRE 29 / DIÈDRE 24 Catamaran — orchestration : options -> modèle 3D -> scène -> UI
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import * as options from './options.js';
-import { GROUPS, DEFAULT_STATE, findItem } from './options.js';
+import { GROUPS, DEFAULT_STATE, MODELS, findItem, defaultsFor } from './options.js';
 import { buildBoat, refineBoatMaterials, setLedGain, setWetLine } from './boat.js';
-import { setInteriorDayFactor } from './interior.js';
+import { buildCatamaran, CAT24_URL } from './catamaran.js';
+import { setInteriorDayFactor, releaseInteriorDayFactor } from './interior.js';
 import { createStage } from './stage.js';
 import { initUI } from './ui.js';
 
 const STATE_KEYS = Object.keys(DEFAULT_STATE);
 
 // ---------- état + URL de partage ----------
+// `model` lu en premier : les valeurs par défaut (nom de coque) dépendent du modèle
 function readStateFromURL() {
-  const s = { ...DEFAULT_STATE };
+  let s = { ...DEFAULT_STATE };
   try {
     const h = new URLSearchParams(location.hash.slice(1));
+    const m = h.get('model');
+    s = defaultsFor(m && MODELS[m] ? m : DEFAULT_STATE.model);
     for (const k of STATE_KEYS) {
+      if (k === 'model') continue;
       const v = h.get(k);
       if (v == null) continue;
       if (k === 'boatName') s[k] = v.slice(0, 18);
@@ -26,7 +31,8 @@ function readStateFromURL() {
 }
 function writeStateToURL(s) {
   const p = new URLSearchParams();
-  for (const k of STATE_KEYS) if (s[k] !== DEFAULT_STATE[k]) p.set(k, s[k]);
+  const def = { ...defaultsFor(s.model), model: DEFAULT_STATE.model }; // model toujours écrit hors défaut
+  for (const k of STATE_KEYS) if (s[k] !== def[k]) p.set(k, s[k]);
   const str = p.toString();
   history.replaceState(null, '', str ? '#' + str : location.pathname + location.search);
 }
@@ -104,11 +110,13 @@ function glassParams(it, inside) {
 // bloom) ; pleine puissance la nuit. Facteur lissé sur ~1 s pour suivre le fondu d'ambiance de stage.js.
 const NIGHT_TARGET = { night: 1, studio: 0.05, sunset: 0.2, overcast: 0 };
 let nightK = -1;
-function stepEmissives(M, ambiance, dt) {
+function stepEmissives(b, ambiance, dt) {
+  const M = b.materials;
   const target = NIGHT_TARGET[ambiance] ?? 0;
   nightK = nightK < 0 ? target : nightK + (target - nightK) * Math.min(1, dt / 0.5);
   setLedGain(0.3 + 0.7 * nightK);
-  setInteriorDayFactor(nightK); // lueurs LED, plafond lumineux, écrans (interior.js)
+  // lueurs LED, plafond lumineux, écrans : interior.js (DIÈDRE 29) ou le bateau lui-même (catamaran)
+  if (b.setDayFactor) b.setDayFactor(nightK); else setInteriorDayFactor(nightK);
   for (const m of [M.navRed, M.navGreen, M.navWhite, M.underwaterLight]) {
     if (!m) continue;
     if (m.userData.__baseEmissive == null) m.userData.__baseEmissive = m.emissiveIntensity;
@@ -178,7 +186,7 @@ function applyState(boat, stage, s, prev = {}) {
   if (changed('woodInterior')) tweenColor(M.woodInterior, findItem('woodInterior', s.woodInterior).tint);
   if (changed('upholsteryExterior')) tweenColor(M.upholsteryExterior, findItem('upholsteryExterior', s.upholsteryExterior).color);
   if (changed('ambientLight')) boat.setLedColor?.(findItem('ambientLight', s.ambientLight).color);
-  if (changed('boatName')) boat.setName?.((s.boatName || '').trim() || 'DIÈDRE 29');
+  if (changed('boatName')) boat.setName?.((s.boatName || '').trim() || (MODELS[s.model] || MODELS.d29).name);
   if (changed('ambiance')) { stage.setAmbiance(s.ambiance); document.documentElement.dataset.scene = s.ambiance; }
   if (changed('setting')) { stage.setSetting(s.setting); setWetLine(s.setting === 'sea' ? 1 : 0); }
 }
@@ -201,6 +209,15 @@ ui = initUI({
   onChange: (key, value) => {
     const prev = state;
     state = { ...state, [key]: value };
+    if (key === 'model') {
+      // options communes conservées ; le nom de coque par défaut suit le modèle
+      const n = (prev.boatName || '').trim();
+      if (!n || n === (MODELS[prev.model] || {}).name) state.boatName = MODELS[value].name;
+      ui.setState(state);
+      writeStateToURL(state);
+      switchModel(value);
+      return;
+    }
     if (boat) applyState(boat, stage, state, prev);
     writeStateToURL(state);
   },
@@ -217,7 +234,7 @@ ui = initUI({
       case 'share': {
         const url = shareURL(state);
         try {
-          if (navigator.share && matchMedia('(pointer:coarse)').matches) await navigator.share({ title: 'Mon DIÈDRE 29', url });
+          if (navigator.share && matchMedia('(pointer:coarse)').matches) await navigator.share({ title: 'Mon ' + MODELS[state.model].name, url });
           else { await navigator.clipboard.writeText(url); ui.toast('Lien de configuration copié'); }
         } catch { ui.toast('Lien : ' + url); }
         break;
@@ -225,7 +242,7 @@ ui = initUI({
       case 'screenshot': {
         const a = document.createElement('a');
         a.href = stage.screenshot();
-        a.download = `DIEDRE29-${(state.boatName || 'config').replace(/[^\w-]+/g, '_')}.png`;
+        a.download = `${state.model === 'cat24' ? 'DIEDRE24' : 'DIEDRE29'}-${(state.boatName || 'config').replace(/[^\w-]+/g, '_')}.png`;
         a.click();
         ui.toast('Capture enregistrée');
         break;
@@ -235,8 +252,9 @@ ui = initUI({
         break;
       case 'load-config': {
         const prev = state;
-        state = { ...DEFAULT_STATE, ...payload };
-        applyState(boat, stage, state, prev);
+        state = { ...defaultsFor(payload.model), ...payload };
+        if (state.model !== boatModel) switchModel(state.model);
+        else applyState(boat, stage, state, prev);
         ui.setState(state);
         writeStateToURL(state);
         ui.toast('Configuration chargée');
@@ -244,7 +262,7 @@ ui = initUI({
       }
       case 'reset': {
         const prev = state;
-        state = { ...DEFAULT_STATE };
+        state = defaultsFor(state.model); // le modèle choisi est conservé
         applyState(boat, stage, state, prev);
         ui.setState(state);
         writeStateToURL(state);
@@ -278,34 +296,137 @@ ui = initUI({
 
 ui.setLoading(0.1);
 
-// Extérieur modélisé sous Blender (coque, pont, superstructure, vitrages, peau du toit) : GLB préchargé AVANT
-// buildBoat (synchrone). Échec (réseau, fichier absent, GLB invalide) → modèle procédural complet de boat.js.
+// DIÈDRE 29 : extérieur modélisé sous Blender (coque, pont, superstructure, vitrages, peau du toit), GLB préchargé
+// AVANT buildBoat (synchrone). Échec (réseau, fichier absent, GLB invalide) → modèle procédural complet de boat.js.
 // ?procedural dans l'URL force le modèle procédural (comparaison, diagnostic).
-const EXTERIOR_URL = 'assets/diedre29-exterior.glb';
-function loadExterior() {
-  if (new URLSearchParams(location.search).has('procedural')) return Promise.resolve(null);
-  return new GLTFLoader().loadAsync(EXTERIOR_URL, (e) => {
-    if (e.lengthComputable && e.total) ui.setLoading(0.1 + 0.3 * (e.loaded / e.total));
+// DIÈDRE 24 Catamaran : tout le bateau est dans assets/cat24.glb (pas de repli procédural), chargé seulement quand
+// on le choisit (ou si l'URL partagée l'indique).
+const MODEL_GLB = { d29: 'assets/diedre29-exterior.glb', cat24: CAT24_URL };
+function loadModelGLB(id, onProgress) {
+  if (id === 'd29' && new URLSearchParams(location.search).has('procedural')) return Promise.resolve(null);
+  const url = MODEL_GLB[id];
+  return new GLTFLoader().loadAsync(url, (e) => {
+    if (e.lengthComputable && e.total) onProgress?.(e.loaded / e.total);
   }).then((gltf) => gltf.scene, (err) => {
-    console.warn('[DIÈDRE 29] extérieur GLB indisponible (' + EXTERIOR_URL + ') : modèle procédural utilisé.', err);
+    if (id !== 'd29') throw err;
+    console.warn('[DIÈDRE 29] extérieur GLB indisponible (' + url + ') : modèle procédural utilisé.', err);
     return null;
   });
 }
-const exteriorReady = loadExterior();
+function buildModel(id, exterior) {
+  let b;
+  if (id === 'cat24') b = buildCatamaran({ exterior });
+  else {
+    try {
+      b = buildBoat({ exterior });
+    } catch (err) {
+      if (!exterior) throw err;
+      console.warn('[DIÈDRE 29] intégration du GLB extérieur impossible : modèle procédural utilisé.', err);
+      b = buildBoat();
+    }
+  }
+  b.model = id;
+  b.lib = refineBoatMaterials(b, { maxAnisotropy: stage.renderer.capabilities.getMaxAnisotropy() });
+  return b;
+}
+// libération GPU d'un bateau retiré : géométries, matériaux (y compris ceux qui ne sont plus montés, ex. clones de
+// coupe déjà rendus), textures (cartes procédurales, canvas du nom, cartes de pont alternatives)
+function disposeBoat(b) {
+  const geos = new Set(), mats = new Set(), texs = new Set();
+  b.root.traverse((o) => {
+    if (o.geometry) geos.add(o.geometry);
+    if (o.material) for (const m of Array.isArray(o.material) ? o.material : [o.material]) mats.add(m);
+  });
+  for (const m of Object.values(b.materials)) if (m && m.isMaterial) mats.add(m);
+  for (const m of mats) for (const k of Object.keys(m)) { const t = m[k]; if (t && t.isTexture) texs.add(t); }
+  for (const t of b.lib?.textures?.() || []) texs.add(t);
+  b.root.removeFromParent();
+  geos.forEach((g) => g.dispose());
+  mats.forEach((m) => m.dispose());
+  texs.forEach((t) => t.dispose());
+  if (b.model !== 'cat24') releaseInteriorDayFactor();
+}
+function disposeScene(sc) {
+  sc?.traverse((o) => {
+    o.geometry?.dispose();
+    if (o.material) for (const m of Array.isArray(o.material) ? o.material : [o.material]) m.dispose();
+  });
+}
+
+// ---------- bascule de modèle ----------
+let boatModel = null;   // modèle effectivement affiché
+let switchSeq = 0;      // dernière demande (les chargements dépassés sont abandonnés)
+async function switchModel(id) {
+  if (!MODELS[id] || !stage || !boat) return;
+  const token = ++switchSeq;
+  if (id === boatModel) { ui.setModelBusy(false); return; }
+  ui.setModelBusy(0);
+  let exterior;
+  try {
+    exterior = await loadModelGLB(id, (p) => token === switchSeq && ui.setModelBusy(0.95 * p));
+  } catch (err) {
+    if (token !== switchSeq) return;
+    console.error(err);
+    ui.setModelBusy(false);
+    ui.toast('Modèle ' + MODELS[id].name + ' indisponible');
+    const prev = state;
+    state = { ...state, model: boatModel };
+    if (prev.boatName === MODELS[id].name) state.boatName = MODELS[boatModel].name;
+    ui.setState(state); writeStateToURL(state);
+    return;
+  }
+  if (token !== switchSeq) { disposeScene(exterior); return; }
+  ui.setModelBusy(0.97);
+  await new Promise((r) => setTimeout(r, 40)); // laisse l'indicateur s'afficher (construction synchrone)
+  if (token !== switchSeq) { disposeScene(exterior); return; }
+  let nb;
+  try {
+    nb = buildModel(id, exterior);
+  } catch (err) {
+    console.error(err);
+    ui.setModelBusy(false);
+    ui.toast('Erreur de chargement 3D : ' + err.message);
+    return;
+  }
+  const view = cutaway ? 'exterior' : (stage.currentView || 'exterior');
+  if (cutaway) { cutaway = false; ui.setActiveView('exterior'); }
+  const old = boat;
+  for (const k of [...tweens.keys()]) tweens.delete(k);
+  setWetLine(state.setting === 'sea' ? 1 : 0);
+  stage.add(nb.root);
+  stage.setBoat(nb); // retire l'ancien, recalcule profil de coque, berceau, boîte, ombres, reflets, feux
+  boat = nb; boatModel = id;
+  disposeBoat(old);
+  interiorGlass = false;
+  applyState(boat, stage, state, { ambiance: state.ambiance, setting: state.setting });
+  stepTweens(10);
+  ui.setActiveView(view);
+  stage.flyTo(view, { duration: 0 });
+  ui.setModelBusy(false);
+}
+
+const firstModel = state.model;
+const exteriorReady = loadModelGLB(firstModel, (p) => ui.setLoading(0.1 + 0.3 * p)).catch((err) => {
+  // catamaran indisponible dans une URL partagée : on retombe sur le DIÈDRE 29
+  console.error(err);
+  return null;
+});
 
 try {
   stage = createStage(ui.getViewportEl());
-  const exterior = await exteriorReady; // téléchargé pendant createStage
+  let exterior = await exteriorReady; // téléchargé pendant createStage
   ui.setLoading(0.5);
-  try {
-    boat = buildBoat({ exterior });
-  } catch (err) {
-    if (!exterior) throw err;
-    console.warn('[DIÈDRE 29] intégration du GLB extérieur impossible : modèle procédural utilisé.', err);
-    boat = buildBoat();
+  let id = firstModel;
+  if (id !== 'd29' && !exterior) {
+    ui.toast('Modèle ' + MODELS[id].name + ' indisponible');
+    id = 'd29';
+    state = { ...state, model: 'd29', boatName: state.boatName === MODELS[firstModel].name ? MODELS.d29.name : state.boatName };
+    ui.setState(state); writeStateToURL(state);
+    exterior = await loadModelGLB('d29', (p) => ui.setLoading(0.1 + 0.3 * p));
   }
+  boat = buildModel(id, exterior);
+  boatModel = id;
   performance.mark('d29-boat-built');
-  boat.lib = refineBoatMaterials(boat, { maxAnisotropy: stage.renderer.capabilities.getMaxAnisotropy() });
   setWetLine(state.setting === 'sea' ? 1 : 0); // vitrage bi-couche, inox brossé, teck massif (avant stage.setBoat)
   ui.setLoading(0.8);
   stage.add(boat.root);
@@ -318,7 +439,7 @@ try {
   stepTweens(10);
   stage.onFrame((dt) => {
     stepTweens(dt);
-    stepEmissives(boat.materials, stage.ambiance, dt);
+    stepEmissives(boat, stage.ambiance, dt);
     // suit la vue courante (y compris flyTo appelé directement) : vitrages clairs en vues intérieures
     const inside = !!stage.VIEWS[stage.currentView]?.interior;
     if (inside !== interiorGlass) setInteriorGlass(inside);
@@ -340,8 +461,9 @@ try {
 addEventListener('hashchange', () => {
   const prev = state;
   state = readStateFromURL();
-  if (boat) applyState(boat, stage, state, prev);
+  if (boat && state.model !== boatModel) switchModel(state.model);
+  else if (boat) applyState(boat, stage, state, prev);
   ui.setState(state);
 });
 
-window.__diedre = { get state() { return state; }, get stage() { return stage; }, get boat() { return boat; } };
+window.__diedre = { get state() { return state; }, get stage() { return stage; }, get boat() { return boat; }, get model() { return boatModel; }, switchModel };

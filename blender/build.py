@@ -20,10 +20,11 @@ ap = argparse.ArgumentParser()
 ap.add_argument('--parts', default='hull,superstructure,propulsion')
 ap.add_argument('--out', default=os.path.join(HERE, 'out'))
 ap.add_argument('--no-export', action='store_true')
+ap.add_argument('--name', default='diedre29', help='nom des fichiers de sortie (diedre29, cat24)')
 args = ap.parse_args(argv)
 os.makedirs(args.out, exist_ok=True)
 
-GROUPS = ['hull', 'superstructure', 'roof', 'upperGlass']
+GROUPS = ['hull', 'superstructure', 'roof', 'upperGlass', 'interior', 'aftDeckFurniture']
 
 # scène vierge
 bpy.ops.wm.read_factory_settings(use_empty=True)
@@ -76,10 +77,10 @@ for o in scene.objects:
         dg.to_mesh_clear()
 print(f'[build] objets={len(scene.objects)} triangles(évalués)={tris}')
 
-bpy.ops.wm.save_as_mainfile(filepath=os.path.join(args.out, 'diedre29.blend'))
+bpy.ops.wm.save_as_mainfile(filepath=os.path.join(args.out, args.name + '.blend'))
 if not args.no_export:
     bpy.ops.export_scene.gltf(
-        filepath=os.path.join(args.out, 'diedre29.glb'), export_format='GLB',
+        filepath=os.path.join(args.out, args.name + '.glb'), export_format='GLB',
         export_apply=True, export_yup=True, export_texcoords=True, export_normals=True,
         export_materials='EXPORT', export_image_format='NONE', export_cameras=False, export_lights=False,
         use_selection=False)

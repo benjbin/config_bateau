@@ -38,6 +38,14 @@
       <p class="loader__pct"><span class="loader__num">0</span> %</p>
     </div>
   </div>
+  <script>
+    // lien partagé vers le catamaran (#…model=cat24) : écran de chargement à son nom dès le premier affichage
+    try { if (/(^|[#&])model=cat24(&|$)/.test(location.hash)) {
+      document.querySelector('.loader__title').innerHTML = 'DIÈDRE 24<span class="b">.</span>';
+      document.querySelector('.loader__tagline').textContent = 'Catamaran électrique · 24,0 m';
+      document.title = 'DIÈDRE 24 — Configurateur';
+    } } catch (e) {}
+  </script>
   <!-- Le reste de l'interface (barre haute, viewport, panneau, modales) est généré par js/ui.js dans #app -->
   <div id="app" class="app"></div>
   <script type="module" src="js/main.js"></script>

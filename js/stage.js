@@ -29,6 +29,71 @@ const VIEWS = {
   helm:     { label: 'Pilotage', pos: [-3.5, 3.1, -1.0], target: [5.0, 2.2, 0.4], interior: true, lookRadius: 0.6, fov: 52 },
   cutaway:  { label: 'Coupe', pos: [15, 33, -27], target: [-3, 1.2, 0], panelShift: true },
 };
+// DIÈDRE 24 Catamaran (24,0 m × 10,2 m) : coques à z = ±3,75, salon x −4,8 → 5,4 (plancher 2,00, plafond 4,15),
+// hardtop 4,40, cockpit x −11,4 → −4,8, pilotage intérieur avant tribord (x 3,5 → 5,2, z 1,2 → 3,4)
+const VIEWS_CAT24 = {
+  exterior: { label: '360°', pos: [25, 6.4, -29], target: [0, 2.1, 0] },
+  profile:  { label: 'Profil', pos: [0, 3.4, -45], target: [0, 2.2, 0] },
+  bow:      { label: 'Étrave', pos: [28, 4.6, -10], target: [5, 2.0, 0] },
+  stern:    { label: 'Poupe', pos: [-30, 5.4, -7], target: [-10, 2.0, 0] },
+  top:      { label: 'Dessus', pos: [0, 46, 0.6], target: [0, 1.5, 0], panelShift: true },
+  aftdeck:  { label: 'Cockpit', pos: [-19.5, 4.3, -4.2], target: [-8.0, 2.7, 0.3], minDistance: 3.5 },
+  salon:    { label: 'Salon', pos: [4.4, 3.2, -2.6], target: [-6, 2.65, 0.9], interior: true, lookRadius: 0.6, fov: 50 },
+  helm:     { label: 'Pilotage', pos: [0.2, 3.25, -0.6], target: [5.4, 2.55, 2.4], interior: true, lookRadius: 0.6, fov: 52 },
+  cutaway:  { label: 'Coupe', pos: [13, 31, -25], target: [-1, 1.8, 0], panelShift: true },
+};
+
+// ---------------------------------------------------------------------------
+// Profils de coque : tout ce qui, dans la scène, dépend de la forme du bateau (vues, houle échantillonnée sous
+// la carène, réponse dynamique, ellipse(s) d'amortissement de l'eau, halos nocturnes, berceau du showroom…).
+// Le bateau le choisit par api.hullProfile (défaut 'd29' : valeurs historiques du DIÈDRE 29, inchangées).
+// ---------------------------------------------------------------------------
+function seaGrid(xs, width, hullsZ) {
+  const pts = [];
+  for (const x of xs) {
+    const w = width(x);
+    for (const hz of hullsZ) for (const zf of (hullsZ.length > 1 ? [-1, 0, 1] : [-1, -0.5, 0, 0.5, 1])) pts.push([x, hz + zf * w]);
+  }
+  return pts;
+}
+const HULL_PROFILES = {
+  d29: {
+    views: VIEWS,
+    // Tenue à la mer : grille couvrant la flottaison (28 m × 7,7 m), carène effilée vers l'étrave
+    seaPts: seaGrid([-12, -8, -4, 0, 4, 8, 12], (x) => 3.3 * Math.min(1, (14.4 - x) / 9), [0]),
+    // périodes propres d'un yacht de 29 m, roulis peu amorti
+    dof: { heave: [4.4, 0.38], pitch: [3.9, 0.42], roll: [6.2, 0.13], yaw: [14, 0.6] },
+    gain: { pitch: 0.6, roll: 1.15, yaw: 0.08 },
+    ell: [15.6, 4.3, 0],                  // demi-axes x, z de l'ellipse d'eau calme, décalage |z| des coques
+    ends: [8.0, 13.0, -10.0, -13.8],      // clapot renforcé à l'étrave / au tableau (dx relatif au bateau)
+    spillA: [-5.0, 4.8, 4.3, 1.4],        // halo nocturne le long des flancs : centre x, demi-longueur, |z|, largeur
+    spillB: [-16.2, 1.6, 2.6, 0],         // halo du cockpit / jupe : x, longueur, largeur z, décalage |z|
+    glowSpread: 0.25,
+    cradle: { stations: [-9.0, -1.0, 7.0], hulls: [0], sideZ: 2.0, keelPad: [0.62, 0.4], sidePad: [0.56, 0.62] },
+    contact: [36, 11],
+    interiorLight: [-4.2, 2.9, 0],
+    cut: [4.4, 2.45],
+    nav: null,                            // feux calculés d'après la boîte de la superstructure (historique)
+  },
+  cat24: {
+    views: VIEWS_CAT24,
+    // deux coques fines (z = ±3,75), flottaison 23,4 m : 7 couples × 3 points par coque
+    seaPts: seaGrid([-11, -7.5, -4, -0.5, 3, 6.5, 10.2], (x) => 0.95 * Math.min(1, (12 - x) / 5), [-3.75, 3.75]),
+    // catamaran : grande stabilité de forme -> roulis court (raide) et bien amorti, tangage un peu plus vif
+    dof: { heave: [3.6, 0.42], pitch: [3.3, 0.45], roll: [3.4, 0.36], yaw: [12, 0.6] },
+    gain: { pitch: 0.6, roll: 0.95, yaw: 0.05 },
+    ell: [12.6, 1.55, 3.75],
+    ends: [6.5, 11.0, -9.0, -12.2],
+    spillA: [0.3, 5.2, 5.5, 1.2],
+    spillB: [-12.6, 1.4, 1.6, 3.75],
+    glowSpread: 0.03,
+    cradle: { stations: [-5.6, 0.4, 6.2], hulls: [-3.75, 3.75], sideZ: 0.62, keelPad: [0.56, 0.34], sidePad: [0.5, 0.42] },
+    contact: [30, 15],
+    interiorLight: [0.3, 3.1, 0],
+    cut: [4.6, 2.75],
+    nav: { port: [5.0, 2.7, -4.12], stbd: [5.0, 2.7, 4.12], mast: [-0.9, 4.75, 0], stern: [-11.45, 2.25, 0] },
+  },
+};
 
 // ---------------------------------------------------------------------------
 // Ambiances
@@ -391,6 +456,10 @@ function makeOceanMaterial(skyUniforms) {
     uSunSpec: { value: 1 },
     uOpacity: { value: 1 },
     uBoat: { value: new THREE.Vector3(0, 0, 0) },   // x, z, influence
+    uEll: { value: new THREE.Vector3(15.6, 4.3, 0) },  // ellipse d'eau calme : demi-axes x, z ; décalage |z| des coques
+    uEnds: { value: new THREE.Vector4(8, 13, -10, -13.8) },
+    uSpillA: { value: new THREE.Vector4(-5, 4.8, 4.3, 1.4) },
+    uSpillB: { value: new THREE.Vector4(-16.2, 1.6, 2.6, 0) },
     uGlowPos: { value: Array.from({ length: 8 }, () => new THREE.Vector3()) },
     uGlowCount: { value: 0 },
     uGlowColor: { value: new THREE.Color('#38c8ff') },
@@ -410,9 +479,9 @@ function makeOceanMaterial(skyUniforms) {
     extensions: { derivatives: true },
     vertexShader: /* glsl */`
       uniform vec4 uWaves[${N_WAVES}];
-      uniform float uWaveAmp; uniform float uTime; uniform vec3 uBoat;
+      uniform float uWaveAmp; uniform float uTime; uniform vec3 uBoat; uniform vec3 uEll;
       varying vec3 vWorld; varying float vH;
-      float boatEll(vec2 p){ vec2 d = p - uBoat.xy; return length(vec2(d.x / 15.6, d.y / 4.3)); }
+      float boatEll(vec2 p){ vec2 d = p - uBoat.xy; return length(vec2(d.x / uEll.x, (uEll.z > 0.0 ? abs(d.y) - uEll.z : d.y) / uEll.y)); }
       void main(){
         vec4 wp = modelMatrix * vec4(position, 1.0);
         vec2 p = wp.xz;
@@ -440,7 +509,7 @@ function makeOceanMaterial(skyUniforms) {
       ${SKY_UNIFORMS_GLSL}
       uniform vec4 uWaves[${N_WAVES}];
       uniform float uWaveAmp; uniform vec3 uWaterDeep; uniform vec3 uWaterScatter; uniform float uSunSpec;
-      uniform float uOpacity; uniform vec3 uBoat;
+      uniform float uOpacity; uniform vec3 uBoat; uniform vec3 uEll; uniform vec4 uEnds; uniform vec4 uSpillA; uniform vec4 uSpillB;
       uniform vec3 uGlowPos[8]; uniform int uGlowCount; uniform vec3 uGlowColor; uniform float uGlow;
       uniform float uFogDensity;
       uniform sampler2D uReflTex; uniform mat4 uReflMat; uniform float uReflOn;
@@ -450,7 +519,7 @@ function makeOceanMaterial(skyUniforms) {
       varying vec3 vWorld; varying float vH;
       float maskAt(vec2 uv){ return texture2D(uMaskTex, uv).r; }
       ${SKY_FUNCS_GLSL}
-      float boatEll(vec2 p){ vec2 d = p - uBoat.xy; return length(vec2(d.x / 15.6, d.y / 4.3)); }
+      float boatEll(vec2 p){ vec2 d = p - uBoat.xy; return length(vec2(d.x / uEll.x, (uEll.z > 0.0 ? abs(d.y) - uEll.z : d.y) / uEll.y)); }
       void main(){
         vec2 p = vWorld.xz;
         vec3 toCam = cameraPosition - vWorld;
@@ -569,7 +638,7 @@ function makeOceanMaterial(skyUniforms) {
             // bateau au mouillage : simple liseré de clapot, fin, cassé, surtout transparent, collé à la coque
             // (+ un peu plus à l'étrave et au tableau, aucune « dentelle » au large)
             float dx = p.x - uBoat.x;
-            float endsK = max(smoothstep(8.0, 13.0, dx), smoothstep(-10.0, -13.8, dx));
+            float endsK = max(smoothstep(uEnds.x, uEnds.y, dx), smoothstep(uEnds.z, uEnds.w, dx));
             float fA = fbm3((p + vec2(uTime * 0.12, -uTime * 0.09)) * 4.2);
             float fB = vnoise(p * 11.0 - vec2(uTime * 0.6, uTime * 0.4));
             float lap = smoothstep(0.30, 0.62, ms) * (1.0 - smoothstep(0.9, 1.0, m0) * 0.7); // ~0.2 m de large
@@ -626,9 +695,9 @@ function makeOceanMaterial(skyUniforms) {
           vec2 lq = p - uBoat.xy;
           float az = abs(lq.y);
           // halos gaussiens (pas de bords nets) : sous les vitrages du salon, centrés vers x ≈ -5
-          float along = exp(-pow((lq.x + 5.0) / 4.8, 2.0));
-          float side = exp(-pow((az - 4.3) / 1.4, 2.0)) * 0.75;
-          float aft = exp(-pow((lq.x + 16.2) / 1.6, 2.0)) * exp(-pow(lq.y / 2.6, 2.0)) * 0.9;   // cockpit / jupe
+          float along = exp(-pow((lq.x - uSpillA.x) / uSpillA.y, 2.0));
+          float side = exp(-pow((az - uSpillA.z) / uSpillA.w, 2.0)) * 0.75;
+          float aft = exp(-pow((lq.x - uSpillB.x) / uSpillB.y, 2.0)) * exp(-pow((uSpillB.w > 0.0 ? az - uSpillB.w : lq.y) / uSpillB.z, 2.0)) * 0.9;   // cockpit / jupe
           float sp = (side * along + aft) * (0.65 + 0.7 * vnoise(p * 1.7 + vec2(uTime * 0.3, 0.0)));
           // vue plongeante : halo atténué (sinon rectangles lumineux nets vus du dessus)
           float fK2 = pow(1.0 - fres, 2.0) * smoothstep(0.02, 0.3, V.y) * (1.0 - 0.85 * smoothstep(0.35, 0.8, V.y));
@@ -706,9 +775,11 @@ export function createStage(containerEl) {
   // --- caméra & contrôles ---------------------------------------------------
   const BASE_FOV = 35;
   const camera = new THREE.PerspectiveCamera(BASE_FOV, 1, 0.25, 7000);
-  camera.position.fromArray(VIEWS.exterior.pos);
+  let prof = HULL_PROFILES.d29;
+  let views = prof.views;
+  camera.position.fromArray(views.exterior.pos);
   const controls = new OrbitControls(camera, canvas);
-  controls.target.fromArray(VIEWS.exterior.target);
+  controls.target.fromArray(views.exterior.target);
   controls.enableDamping = true;
   controls.dampingFactor = 0.06;
   controls.enablePan = false;
@@ -865,7 +936,8 @@ export function createStage(containerEl) {
   const steelMat = new THREE.MeshStandardMaterial({ color: 0xa3a8ad, metalness: 1, roughness: 0.42 });
   // feutre/caoutchouc gris moyen : se détache du fond de carène noir (lisible depuis la vue héro)
   const padMat = new THREE.MeshStandardMaterial({ color: 0x55585d, metalness: 0, roughness: 0.95 });
-  const SIDE_Z = 2.0; // béquilles vers le bouchain : visibles sous le bordé, appui sur la partie plate de la carène
+  // béquilles vers le bouchain : visibles sous le bordé, appui sur la partie plate de la carène (prof.cradle.sideZ :
+  // 2,0 m pour le DIÈDRE 29 ; catamaran : un berceau sous chaque coque, stations hors des pods)
   let cradleBuilt = false;
   // patin conforme : sommet = surface de coque (yAt) - 3 mm, chanfrein périphérique, épaisseur T
   function conformPad(cx, cz, sx, sz, T, yAt, flatBottom = false) {
@@ -928,6 +1000,11 @@ export function createStage(containerEl) {
     while (cradle.children.length) { const c = cradle.children.pop(); c.geometry.dispose(); }
     const hull = boatApi && boatApi.parts && (boatApi.parts.hull || boatRoot);
     if (!hull || !boatRoot) return;
+    // patins moulés sur la carène dans l'assiette du showroom (roulis / tangage nuls) : le berceau se construit au
+    // début du fondu mer -> showroom, quand le bateau garde encore l'attitude de la houle (patins sinon décalés,
+    // d'autant plus sur la grande largeur d'un catamaran)
+    const rot0 = boatRoot.rotation.clone();
+    boatRoot.rotation.set(0, 0, 0);
     boatRoot.updateMatrixWorld(true);
     const rc = new THREE.Raycaster();
     const up = new THREE.Vector3(0, 1, 0);
@@ -947,14 +1024,15 @@ export function createStage(containerEl) {
     const rbox = (w, h, d, r, mat, x, y, z) => mesh(new RoundedBoxGeometry(w, h, d, 3, Math.min(r, h / 2 - 1e-3, w / 2 - 1e-3, d / 2 - 1e-3)), mat, x, y, z);
     const cyl = (r, h, mat, x, y, z) => mesh(new THREE.CylinderGeometry(r, r, h, 24), mat, x, y, z);
     const FOOT = 0.003; // jamais coplanaire au sol (pas de z-fighting)
-    const z0 = boatBase.z;
-    for (const lx of [-9.0, -1.0, 7.0]) {
+    const { stations, hulls, sideZ: SIDE_Z, keelPad, sidePad } = prof.cradle;
+    for (const hz of hulls) for (const lx of stations) {
+      const z0 = boatBase.z + hz;
       const wx = boatBase.x + lx;
-      const keel = conformPad(wx, z0, 0.62, 0.4, 0.07, yAt, true);
+      const keel = conformPad(wx, z0, keelPad[0], keelPad[1], 0.07, yAt, true);
       if (!keel) continue;
       const sides = [];
       for (const s of [1, -1]) {
-        const sp = conformPad(wx, z0 + SIDE_Z * s, 0.56, 0.62, 0.07, yAt);
+        const sp = conformPad(wx, z0 + SIDE_Z * s, sidePad[0], sidePad[1], 0.07, yAt);
         if (sp && sp.yMinBottom > 0.3) sides.push({ s, sp });
       }
       const halfSpan = SIDE_Z + 0.32;
@@ -993,6 +1071,8 @@ export function createStage(containerEl) {
         arm.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize());
       }
     }
+    boatRoot.rotation.copy(rot0);
+    boatRoot.updateMatrixWorld(true);
     cradleBuilt = cradle.children.length > 0;
   }
   const contactTex = radialTexture('0,0,0', 0.85);
@@ -1197,11 +1277,41 @@ export function createStage(containerEl) {
     prepareShadows(object3D);
   }
 
+  let profId = 'd29';
+  function applyProfile(id) {
+    profId = HULL_PROFILES[id] ? id : 'd29';
+    prof = HULL_PROFILES[profId];
+    views = prof.views;
+    const u = oceanMat.uniforms;
+    u.uEll.value.fromArray(prof.ell);
+    u.uEnds.value.fromArray(prof.ends);
+    u.uSpillA.value.fromArray(prof.spillA);
+    u.uSpillB.value.fromArray(prof.spillB);
+    contact.scale.set(prof.contact[0] / 36, prof.contact[1] / 11, 1);
+    interiorLight.position.fromArray(prof.interiorLight);
+    [CUT_Y_TOP, CUT_Y] = prof.cut;
+    setSeaProfile();
+  }
+  // Bascule de modèle : l'ancien bateau est retiré de la scène (sa libération GPU revient à l'appelant, main.js)
+  // et tout ce qui en dépend est recalculé : profil de coque, coupe, berceau, boîte (ombre, tirant d'eau), reflets,
+  // matériaux (IBL), feux, projecteurs sous-marins.
   function setBoat(api) {
+    const prevRoot = boatRoot;
+    if (prevRoot && (!api || api.root !== prevRoot)) {
+      if (cutFade) endCutFade();
+      if (secEntries) applySection(false);
+      cutawayOn = false; cutK = 0;
+      for (const n of navLights) n.sprite.material.dispose();
+      navLights.length = 0; navGroup.clear(); navGroup.removeFromParent();
+      prevRoot.removeFromParent();
+    }
+    applyProfile(api && api.hullProfile);
     boatApi = api || null;
     boatRoot = api ? api.root : null;
     glowLocal.length = 0;
     cradleBuilt = false;
+    while (cradle.children.length) { const c = cradle.children.pop(); c.geometry.dispose(); }
+    boatBoxRel.makeEmpty(); boxCounter = 0;
     collectBoatMats();
     collectReflGlass();
     if (!boatRoot) return;
@@ -1224,11 +1334,12 @@ export function createStage(containerEl) {
       const minX = pts.reduce((a, p) => Math.min(a, p.x), Infinity);
       for (const p of pts) {
         if (p.x > minX + 0.6 || glowLocal.length >= 4) continue;
-        glowLocal.push(p.clone().add(new THREE.Vector3(-1.1, 0, p.z * 0.25)));
+        glowLocal.push(p.clone().add(new THREE.Vector3(-1.1, 0, p.z * prof.glowSpread)));
       }
       uw.visible = amb.night > 0.5;
     }
     buildNavLights();
+    fitShadow(); // boîte et tirant d'eau du nouveau bateau tout de suite (berceau, pose en showroom)
   }
 
   // --- feux de navigation (nuit) : halos HDR (bloom), secteurs réglementaires --------------------------
@@ -1277,6 +1388,20 @@ export function createStage(containerEl) {
       navGroup.add(s);
       navLights.push({ sprite: s, gain, hex, sector });
     };
+    if (prof.nav) { // profil : optiques du GLB (matériaux navRed / navGreen / navWhite) sinon positions de la fiche
+      const M = (boatApi && boatApi.materials) || {};
+      const lens = (mat, fb) => {
+        const b = new THREE.Box3();
+        if (mat) boatRoot.traverse((o) => { if (o.isMesh && o.material === mat) { o.geometry.computeBoundingBox(); b.union(o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld)); } });
+        return b.isEmpty() || b.getSize(new THREE.Vector3()).length() > 1.5 ? new THREE.Vector3().fromArray(fb) : b.applyMatrix4(inv).getCenter(new THREE.Vector3());
+      };
+      const pr = lens(M.navRed, prof.nav.port), st = lens(M.navGreen, prof.nav.stbd), mw = lens(M.navWhite, prof.nav.mast);
+      add('#ff2a1a', 3.2, pr.add(new THREE.Vector3(0, 0, -0.04)), 0.55, 'port');
+      add('#18ff6a', 3.2, st.add(new THREE.Vector3(0, 0, 0.04)), 0.55, 'stbd');
+      add('#fff2dc', 2.2, mw.add(new THREE.Vector3(0, 0.08, 0)), 0.32, 'mast');
+      add('#fff2dc', 2.2, new THREE.Vector3().fromArray(prof.nav.stern), 0.4, 'stern');
+      return;
+    }
     const xs = sb.max.x - 0.45, ys = sb.min.y + 0.62;
     add('#ff2a1a', 3.2, new THREE.Vector3(xs, ys, sb.min.z - 0.03), 0.55, 'port');
     add('#18ff6a', 3.2, new THREE.Vector3(xs, ys, sb.max.z + 0.03), 0.55, 'stbd');
@@ -1305,7 +1430,7 @@ export function createStage(containerEl) {
   }
 
   // --- vues / vol caméra ----------------------------------------------------
-  let currentView = VIEWS.exterior;
+  let currentView = views.exterior;
   let currentViewId = 'exterior';
   let flight = null;
 
@@ -1346,7 +1471,7 @@ export function createStage(containerEl) {
 
   function flyTo(viewId, opts = {}) {
     const duration = opts.duration != null ? opts.duration : 1.6;
-    let v = typeof viewId === 'string' ? VIEWS[viewId] : viewId;
+    let v = typeof viewId === 'string' ? views[viewId] : viewId;
     if (!v) return Promise.resolve(false);
     if (flight) { flight.resolve(false); flight = null; }
     const { pos, tgt } = viewTargetVec(v);
@@ -1442,7 +1567,7 @@ export function createStage(containerEl) {
   // du pont ; l'intérieur des volumes coupés apparaît plein (gl_FrontFacing) au lieu d'être creux.
   renderer.localClippingEnabled = true;
   const cutPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 1e4);
-  const CUT_Y_TOP = 4.4, CUT_Y = 2.45;
+  let CUT_Y_TOP = 4.4, CUT_Y = 2.45; // prof.cut
   let cutK = 0;
   let secEntries = null;
   function secMaterial(m) {
@@ -1836,13 +1961,15 @@ export function createStage(containerEl) {
   // naturellement les vagues courtes (un 29 m ne « sent » que la houle longue). Pilonnement, tangage et roulis
   // = moyenne et pentes (moindres carrés) de cette surface, puis réponse dynamique du 2e ordre par degré de
   // liberté (périodes propres d'un yacht de 29 m, roulis peu amorti) : retard, inertie et léger balancement résiduel.
-  const SEA_PTS = [];
-  for (const x of [-12, -8, -4, 0, 4, 8, 12]) {
-    const w = 3.3 * Math.min(1, (14.4 - x) / 9); // carène effilée vers l'étrave
-    for (const zf of [-1, -0.5, 0, 0.5, 1]) SEA_PTS.push([x, zf * w]);
+  // (points, périodes et gains : prof.seaPts / prof.dof / prof.gain, voir HULL_PROFILES)
+  let SEA_PTS = prof.seaPts, SEA_SXX = 1, SEA_SZZ = 1;
+  function setSeaProfile() {
+    SEA_PTS = prof.seaPts;
+    SEA_SXX = SEA_PTS.reduce((s, p) => s + p[0] * p[0], 0);
+    SEA_SZZ = SEA_PTS.reduce((s, p) => s + p[1] * p[1], 0);
+    for (const k in DOF) { DOF[k].w0 = (2 * Math.PI) / prof.dof[k][0]; DOF[k].zeta = prof.dof[k][1]; }
+    seaInit = false; // le nouveau bateau part de l'équilibre (pas de saut hérité de l'ancien)
   }
-  const SEA_SXX = SEA_PTS.reduce((s, p) => s + p[0] * p[0], 0);
-  const SEA_SZZ = SEA_PTS.reduce((s, p) => s + p[1] * p[1], 0);
   function waterHeight(px, pz) {
     const W = oceanMat.uniforms.uWaves.value, amp = oceanMat.uniforms.uWaveAmp.value, t = time;
     // Gerstner : la surface en (px, pz) vient d'un point d'origine déplacé horizontalement -> 2 itérations de point fixe
@@ -1872,6 +1999,7 @@ export function createStage(containerEl) {
     yaw:   { w0: (2 * Math.PI) / 14, zeta: 0.6, x: 0, v: 0 },
   };
   let seaInit = false;
+  setSeaProfile();
   function seaTargets() {
     const bx = boatBase.x, bz = boatBase.z;
     let sh = 0, sxh = 0, szh = 0;
@@ -1883,9 +2011,9 @@ export function createStage(containerEl) {
     const sx = sxh / SEA_SXX, sz = szh / SEA_SZZ;      // pentes de la surface moyenne
     return {
       heave: sh / n,
-      pitch: Math.atan(sx) * 0.6,                    // proue qui monte quand l'eau est plus haute à l'avant
-      roll: -Math.atan(sz) * 1.15,                     // tribord (+z) qui monte quand l'eau y est plus haute
-      yaw: Math.atan(sz) * 0.08,                       // embardée minime induite par le roulis
+      pitch: Math.atan(sx) * prof.gain.pitch,          // proue qui monte quand l'eau est plus haute à l'avant
+      roll: -Math.atan(sz) * prof.gain.roll,           // tribord (+z) qui monte quand l'eau y est plus haute
+      yaw: Math.atan(sz) * prof.gain.yaw,              // embardée minime induite par le roulis
     };
   }
   function stepSea(dt) {
@@ -2055,7 +2183,8 @@ export function createStage(containerEl) {
 
   return {
     scene, camera, renderer, controls,
-    VIEWS,
+    get VIEWS() { return views; },
+    get hullProfile() { return profId; },
     add,
     setAmbiance,
     setSetting,
@@ -2083,7 +2212,7 @@ export function createStage(containerEl) {
       cap = o; capDt = o.dt != null ? o.dt : 1 / 30;
       const id = o.view || (o.interior ? 'salon' : 'exterior');
       currentViewId = id;
-      currentView = Object.assign({}, VIEWS[id] || {}, { panelShift: false, interior: !!o.interior });
+      currentView = Object.assign({}, views[id] || {}, { panelShift: false, interior: !!o.interior });
       tick();
       return canvas;
     },

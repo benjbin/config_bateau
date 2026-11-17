@@ -806,8 +806,9 @@ class CappedPhysicalMaterial extends THREE.MeshPhysicalMaterial {
     s.uniforms.uEnvCap = { get value() { return mat.userData.envCap ?? 0.5; } };
     // userData.transGlow (Color linéaire, optionnel) : « transmission » simulée — lumière de l'intérieur vue à
     // travers l'acrylique fumé ∝ éclairement ambiant (IBL) × (1 − Fresnel) : gris fumé vu d'en haut, miroir sombre en rasant.
-    const zero = new THREE.Color(0, 0, 0);
-    s.uniforms.uTransGlow = { get value() { return mat.userData.transGlow || zero; } };
+    const zero = new THREE.Color(0, 0, 0), tg = new THREE.Color();
+    // (material.clone() copie userData en JSON : transGlow y redevient un simple {r, g, b} -> reconverti en Color)
+    s.uniforms.uTransGlow = { get value() { const g = mat.userData.transGlow; return !g ? zero : g.isColor ? g : tg.setRGB(g.r, g.g, g.b); } };
     s.fragmentShader = 'uniform float uEnvCap;\nuniform vec3 uTransGlow;\n' + s.fragmentShader.replace('#include <lights_fragment_end>',
       '#include <lights_fragment_end>\n\t{ float capM = max( max( reflectedLight.indirectSpecular.r, reflectedLight.indirectSpecular.g ), max( reflectedLight.indirectSpecular.b, 1e-4 ) );\n' +
       '\t  reflectedLight.indirectSpecular *= min( 1.0, uEnvCap / capM );\n' +
@@ -925,6 +926,8 @@ export function refineBoatMaterials(boat, opts = {}) {
       }
       return deckCache[kind];
     },
+    // cartes générées ici (libérées par main.js à la bascule de modèle)
+    textures() { return Object.values(deckCache).flatMap((c) => Object.values(c)).filter((t) => t && t.isTexture); },
   };
 }
 
@@ -1022,7 +1025,7 @@ function makeDeckCaulk(M) {
   return m;
 }
 // Ajoute les maillages du GLB dans les groupes du configurateur ; renvoie le nombre de maillages ajoutés.
-function addExterior(scene, groups, M, uvScale) {
+export function addExterior(scene, groups, M, uvScale) {
   scene.updateMatrixWorld(true);
   const done = new Set(), unused = new Set();
   let count = 0;
@@ -1084,8 +1087,9 @@ function addExterior(scene, groups, M, uvScale) {
 // ---------------------------------------------------------------------------
 // opts.exterior : scène GLTF (gltf.scene) de l'extérieur Blender — remplace coque, pont, superstructure, vitrage
 // et peau du toit procéduraux (voir addExterior et la liste des pièces conservées plus bas).
-export function buildBoat(opts = {}) {
-  const EXT = opts.exterior || null;
+// Matériaux partagés du configurateur (clés = noms de matériaux des GLB Blender) et densités UV (m par tuile).
+// Appelée par buildBoat (DIÈDRE 29) et buildCatamaran (js/catamaran.js) : chaque bateau a ses propres instances.
+export function createBoatMaterials() {
   const phys = (p) => new THREE.MeshPhysicalMaterial(p);
   const teak = makeTeakMaps();
   const wood = makeWoodTexture();
@@ -1172,6 +1176,13 @@ export function buildBoat(opts = {}) {
     [materials.accent, [0.5, 0.5]],         // brossé (tuile 0,5 m)
     [materials.metalDark, [0.5, 0.5]],
   ]);
+  return { materials, uvScale };
+}
+
+export function buildBoat(opts = {}) {
+  const EXT = opts.exterior || null;
+  const phys = (p) => new THREE.MeshPhysicalMaterial(p);
+  const { materials, uvScale } = createBoatMaterials();
 
   const root = new THREE.Group(); root.name = 'DIEDRE29';
   const hullG = new THREE.Group(); hullG.name = 'hull';

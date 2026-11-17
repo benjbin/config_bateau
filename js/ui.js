@@ -34,8 +34,11 @@
 //     openSummary({ state, imageDataURL, shareURL? })   modal récapitulatif imprimable
 //     addToCompare({ state, imageDataURL })             tiroir comparaison (max 3)
 //     openGallery(index = 0)                             galerie des rendus officiels
-//     configCode(state)                 -> 'D29-XXXX-XXXX-XXX' (code lisible de la configuration)
+//     configCode(state)                 -> 'D29-XXXX-XXXX-XXX' (code lisible ; préfixe C24 pour le catamaran)
+//     setModelBusy(progress0to1 | false) indicateur de chargement d'un modèle (GLB paresseux)
 //   }
+//   Modèles (options.MODELS) : sélecteur en tête du panneau -> onChange('model', id) ; titres, tagline, fiche
+//   technique, code, récapitulatif et comparaison suivent state.model.
 //
 // Ids DOM : #app, #loader, #topbar, #viewport, #stage, #hotspots, #hotspot-bubble, #viewbar,
 //           #view-chips, #tools, #compare-drawer, #panel, #panel-body, #btn-summary, #toast,
@@ -81,9 +84,15 @@ const store = {
 
 export function initUI({ options, state: initialState, onChange = () => {}, onView = () => {}, onAction = () => {} }) {
   const { GROUPS, VIEW_CHIPS = [], DEFAULT_STATE = {}, MODEL = {}, GALLERY = [] } = options;
+  const MODELS = options.MODELS || { [MODEL.id || 'd29']: MODEL };
+  const chipsFor = options.viewChipsFor || (() => VIEW_CHIPS);
+  const galleryFor = (id) => (options.GALLERIES && options.GALLERIES[id]) || (id === (MODEL.id || 'd29') ? GALLERY : []);
   let state = { ...DEFAULT_STATE, ...initialState };
-  const modelName = MODEL.name || 'DIÈDRE 29';
+  const modelOf = (s) => MODELS[s && s.model] || MODEL;
+  let curModel = modelOf(state);
+  let modelName = curModel.name || 'DIÈDRE 29';
   const studio = brandFix(MODEL.studio || 'NEOKROME');
+  const lengthTxt = (m) => (m.length ? ' · ' + m.length : '');
 
   const groupByKey = new Map(GROUPS.map((g) => [g.key, g]));
   const itemOf = (key, id) => groupByKey.get(key)?.items?.find((i) => i.id === id) || null;
@@ -102,7 +111,7 @@ export function initUI({ options, state: initialState, onChange = () => {}, onVi
       const i = Math.max(0, g.items.findIndex((it) => it.id === s[g.key]));
       c += i.toString(36).toUpperCase();
     }
-    return ('D29-' + c.slice(0, 4) + '-' + c.slice(4, 8) + (c.length > 8 ? '-' + c.slice(8) : '')).replace(/-$/, '');
+    return ((modelOf(s).code || 'D29') + '-' + c.slice(0, 4) + '-' + c.slice(4, 8) + (c.length > 8 ? '-' + c.slice(8) : '')).replace(/-$/, '');
   }
 
   // ---------------------------------------------------------------- squelette
@@ -115,7 +124,7 @@ export function initUI({ options, state: initialState, onChange = () => {}, onVi
       <div class="brand">
         ${LOGO}
         <span class="brand__sep" aria-hidden="true"></span>
-        <span class="brand__model"><b>${esc(modelName)}</b><small>Configurateur</small></span>
+        <span class="brand__model"><b class="brand__name">${esc(modelName)}</b><small>Configurateur</small></span>
       </div>
       <nav class="topnav" aria-label="Navigation principale">
         <button type="button" class="topnav__link" data-act="gallery">${icon('images')}<span>Galerie</span></button>
@@ -140,7 +149,7 @@ export function initUI({ options, state: initialState, onChange = () => {}, onVi
         <header class="vhead">
           <p class="vhead__eyebrow eyebrow">${esc(studio)} · Étude de concept</p>
           <h1 class="vhead__title">${esc(modelName)}<span class="b">.</span></h1>
-          <p class="vhead__tagline">${esc(MODEL.tagline || 'Concept de yacht électrique')} · 28,8 m</p>
+          <p class="vhead__tagline">${esc(curModel.tagline || 'Concept de yacht électrique')}${esc(lengthTxt(curModel))}</p>
           <p class="vhead__name" hidden></p>
         </header>
 
@@ -189,6 +198,14 @@ export function initUI({ options, state: initialState, onChange = () => {}, onVi
           <div class="panel__titles">
             <p class="eyebrow">Configurateur</p>
             <h2 class="panel__title">Votre ${esc(modelName)}<span class="b">.</span></h2>
+          </div>
+          <div class="models" role="radiogroup" aria-label="Modèle">
+            ${Object.values(MODELS).map((m) => `<button type="button" class="model" role="radio" aria-checked="false" data-model="${esc(m.id)}">
+              <span class="model__type">${esc(m.type || '')}</span>
+              <span class="model__name">${esc(m.name)}</span>
+              <span class="model__len">${esc(m.length || '')}</span>
+              <span class="model__load" aria-hidden="true"><i></i></span>
+            </button>`).join('')}
           </div>
           <nav class="ptabs" aria-label="Sections">
             ${sections.map((s, i) => `<button type="button" class="ptab${i === 0 ? ' is-active' : ''}" data-goto="${s.id}">${esc(s.name)}</button>`).join('')}
@@ -367,6 +384,7 @@ export function initUI({ options, state: initialState, onChange = () => {}, onVi
 
   function setState(s) {
     state = { ...DEFAULT_STATE, ...s };
+    applyModel();
     for (const key of groupEls.keys()) syncGroup(key);
     updateMeta();
   }
@@ -523,7 +541,7 @@ export function initUI({ options, state: initialState, onChange = () => {}, onVi
     loader = h(`<div id="loader" class="loader" role="progressbar" aria-label="Chargement du configurateur" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
       <div class="loader__inner"><div class="loader__box" aria-hidden="true"><svg viewBox="0 0 220 230"><polygon class="lb-l" points="0,42 99,112 99,229 0,172"/><polygon class="lb-r" points="140,122 219,72 219,172 140,229"/><polygon class="lb-t" points="78,45 204,1 205,69 139,100"/></svg></div>
       <p class="loader__studio eyebrow">${esc(studio)} · Étude de concept</p><p class="loader__title">${esc(modelName)}<span class="b">.</span></p>
-      <p class="loader__tagline">${esc(MODEL.tagline || '')} · 28,8 m</p><div class="loader__bar"><span class="loader__fill"></span></div>
+      <p class="loader__tagline">${esc(curModel.tagline || '')}${esc(lengthTxt(curModel))}</p><div class="loader__bar"><span class="loader__fill"></span></div>
       <p class="loader__pct"><span class="loader__num">0</span> %</p></div></div>`);
     document.body.appendChild(loader);
   }
@@ -602,11 +620,13 @@ export function initUI({ options, state: initialState, onChange = () => {}, onVi
   const summaryDlg = makeDialog('modal-summary', 'modal--summary', 'Récapitulatif de configuration');
   function openSummary({ state: s = state, imageDataURL = '', shareURL = '' } = {}) {
     const cfg = { ...DEFAULT_STATE, ...s };
-    const name = (cfg.boatName || '').trim() || modelName;
+    const mdl = modelOf(cfg), mName = mdl.name || modelName;
+    const name = (cfg.boatName || '').trim() || mName;
     const code = configCode(cfg);
     const date = new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
     const link = shareURL || location.href;
-    const choices = sections.map((sec) => `
+    const modelRow = `<div class="sum__sec"><h4 class="sum__sech">Modèle</h4><dl class="sum__list"><div class="sum__row"><dt>${esc(mdl.type || 'Modèle')}</dt><dd><span>${esc(mName)}</span><span class="sum__sub">${esc(mdl.length || '')}</span></dd></div></dl></div>`;
+    const choices = modelRow + sections.map((sec) => `
       <div class="sum__sec">
         <h4 class="sum__sech">${esc(sec.name)}</h4>
         <dl class="sum__list">${sec.groups.map((g) => {
@@ -616,7 +636,7 @@ export function initUI({ options, state: initialState, onChange = () => {}, onVi
           return `<div class="sum__row"><dt>${esc(g.title)}</dt><dd>${dot}<span>${esc(labelOf(g.key, cfg[g.key]))}</span>${sub}</dd></div>`;
         }).join('')}</dl>
       </div>`).join('');
-    const specs = (MODEL.specs || []).map(([k, v]) => `<div class="sum__row"><dt>${esc(k)}</dt><dd><strong>${esc(v)}</strong></dd></div>`).join('');
+    const specs = (mdl.specs || []).map(([k, v]) => `<div class="sum__row"><dt>${esc(k)}</dt><dd><strong>${esc(v)}</strong></dd></div>`).join('');
 
     summaryDlg.innerHTML = `
       <div class="modal__card sum">
@@ -625,7 +645,7 @@ export function initUI({ options, state: initialState, onChange = () => {}, onVi
             <div class="modal__brand">${LOGO}</div>
             <p class="eyebrow">Récapitulatif de configuration · ${esc(date)}</p>
             <h2 class="modal__title">${esc(name)}<span class="b">.</span></h2>
-            <p class="modal__sub">${esc(modelName)} — ${esc(MODEL.tagline || '')} · par ${esc(studio)}</p>
+            <p class="modal__sub">${esc(mName)} — ${esc(mdl.tagline || '')}${esc(lengthTxt(mdl))} · par ${esc(studio)}</p>
           </div>
           <button type="button" class="iconbtn no-print" data-close aria-label="Fermer le récapitulatif">${icon('close')}</button>
         </header>
@@ -633,7 +653,7 @@ export function initUI({ options, state: initialState, onChange = () => {}, onVi
           <div class="sum__visual">
             <figure class="sum__fig">${imageDataURL
               ? `<img src="${esc(imageDataURL)}" alt="Rendu de la configuration ${esc(name)}">`
-              : `<div class="sum__noimg">${esc(modelName)}</div>`}</figure>
+              : `<div class="sum__noimg">${esc(mName)}</div>`}</figure>
             <div class="sum__code">
               <span class="foot__label">Code de configuration</span>
               <span class="sum__codev">${esc(code)}</span>
@@ -641,7 +661,7 @@ export function initUI({ options, state: initialState, onChange = () => {}, onVi
             <section class="sum__specs">
               <h4 class="sum__sech">Fiche technique</h4>
               <dl class="sum__list">${specs}</dl>
-              ${MODEL.pending ? `<p class="sum__pending"><span>À préciser en avant-projet</span>${esc(MODEL.pending)}</p>` : ''}
+              ${mdl.pending ? `<p class="sum__pending"><span>À préciser en avant-projet</span>${esc(mdl.pending)}</p>` : ''}
             </section>
           </div>
           <div class="sum__choices">${choices}</div>
@@ -773,8 +793,9 @@ export function initUI({ options, state: initialState, onChange = () => {}, onVi
       return;
     }
     drawerList.innerHTML = compares.map((c, i) => {
-      const diffs = KEY_DIFF.filter((k) => c.state[k] !== state[k]);
-      const name = (c.state.boatName || '').trim() || modelName;
+      const diffs = ['model', ...KEY_DIFF].filter((k) => c.state[k] !== state[k]);
+      const cm = modelOf(c.state);
+      const name = (c.state.boatName || '').trim() || cm.name;
       const rows = KEY_DIFF.slice(0, 6).map((k) => {
         const it = itemOf(k, c.state[k]);
         const d = c.state[k] !== state[k];
@@ -785,7 +806,7 @@ export function initUI({ options, state: initialState, onChange = () => {}, onVi
         <div class="cmp__thumb">${c.img ? `<img src="${esc(c.img)}" alt="">` : ''}<span class="cmp__idx">${String.fromCharCode(65 + i)}</span></div>
         <div class="cmp__body">
           <h3 class="cmp__name">${esc(name)}</h3>
-          <p class="cmp__meta">${esc(configCode(c.state))} · ${diffs.length ? `${diffs.length} différence${diffs.length > 1 ? 's' : ''} avec l’actuelle` : 'Identique à l’actuelle'}</p>
+          <p class="cmp__meta">${esc(cm.name)} · ${esc(configCode(c.state))} · ${diffs.length ? `${diffs.length} différence${diffs.length > 1 ? 's' : ''} avec l’actuelle` : 'Identique à l’actuelle'}</p>
           <ul class="cmp__rows">${rows}</ul>
           <div class="cmp__actions">
             <button type="button" class="btn btn--small btn--primary" data-load>Charger</button>
@@ -804,6 +825,67 @@ export function initUI({ options, state: initialState, onChange = () => {}, onVi
     else if (e.target.closest('[data-del]')) { compares = compares.filter((x) => x !== c); renderCompare(); }
   });
 
+  // ---------------------------------------------------------------- modèle (sélecteur + textes qui en dépendent)
+  const modelBtns = $$('.model');
+  let appliedModel = null;
+  function applyModel() {
+    curModel = modelOf(state);
+    modelName = curModel.name || 'DIÈDRE 29';
+    modelBtns.forEach((b) => { const on = b.dataset.model === curModel.id; b.setAttribute('aria-checked', String(on)); b.tabIndex = on ? 0 : -1; });
+    if (appliedModel === curModel.id) return;
+    appliedModel = curModel.id;
+    const dot = '<span class="b">.</span>';
+    $('.brand__name').textContent = brandFix(modelName);
+    $('.vhead__title').innerHTML = esc(modelName) + dot;
+    $('.vhead__tagline').textContent = brandFix((curModel.tagline || '') + lengthTxt(curModel));
+    $('.panel__title').innerHTML = 'Votre ' + esc(modelName) + dot;
+    viewportEl.setAttribute('aria-label', 'Vue 3D du ' + brandFix(modelName));
+    const lt = loader.querySelector('.loader__title'), lg = loader.querySelector('.loader__tagline');
+    if (lt) lt.innerHTML = esc(modelName) + dot;
+    if (lg) lg.textContent = brandFix((curModel.tagline || '') + lengthTxt(curModel));
+    const labels = Object.fromEntries(chipsFor(curModel.id).map((c) => [c.id, c.label]));
+    viewBtns.forEach((b) => { if (labels[b.dataset.view]) b.textContent = labels[b.dataset.view]; });
+    const nameIn = groupEls.get('boatName')?.input;
+    if (nameIn) nameIn.placeholder = modelName;
+    $('[data-act="gallery"]').hidden = !galleryFor(curModel.id).length;
+    document.title = `${modelName} — Configurateur`;
+  }
+  function selectModel(id) {
+    if (!MODELS[id] || state.model === id) return;
+    state.model = id;
+    applyModel();
+    updateMeta();
+    closeBubble();
+    onChange('model', id);
+  }
+  modelBtns.forEach((b) => b.addEventListener('click', () => selectModel(b.dataset.model)));
+  $('.models').addEventListener('keydown', (e) => {
+    const k = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+    if (!k) return;
+    e.preventDefault();
+    const i = (modelBtns.findIndex((b) => b.dataset.model === state.model) + k + modelBtns.length) % modelBtns.length;
+    modelBtns[i].focus();
+    selectModel(modelBtns[i].dataset.model);
+  });
+  // chargement paresseux d'un modèle : barre fine dans le bouton choisi + pastille sur la vue 3D
+  const mload = h(`<div class="mload glass" role="status" aria-live="polite" hidden><span class="mload__txt"></span><span class="mload__bar"><i></i></span></div>`);
+  viewportEl.appendChild(mload);
+  function setModelBusy(p) {
+    const busy = !(p === false || p == null);
+    const v = busy ? Math.max(0, Math.min(1, +p || 0)) : 1;
+    $('.models').setAttribute('aria-busy', String(busy));
+    modelBtns.forEach((b) => {
+      const on = busy && b.dataset.model === state.model;
+      b.classList.toggle('is-loading', on);
+      b.querySelector('.model__load i').style.transform = `scaleX(${on ? v : 0})`;
+    });
+    mload.hidden = !busy;
+    if (busy) {
+      mload.querySelector('.mload__txt').textContent = `Chargement du ${brandFix(modelName)}… ${Math.round(v * 100)} %`;
+      mload.querySelector('.mload__bar i').style.transform = `scaleX(${v})`;
+    }
+  }
+
   // ---------------------------------------------------------------- init
   setState(state);
 
@@ -818,5 +900,6 @@ export function initUI({ options, state: initialState, onChange = () => {}, onVi
     addToCompare,
     openGallery,
     configCode,
+    setModelBusy,
   };
 }

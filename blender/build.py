@@ -25,7 +25,7 @@ ap.add_argument('--name', default='diedre29', help='nom des fichiers de sortie (
 args = ap.parse_args(argv)
 os.makedirs(args.out, exist_ok=True)
 
-GROUPS = ['hull', 'superstructure', 'roof', 'upperGlass', 'interior', 'aftDeckFurniture']
+GROUPS = ['hull', 'superstructure', 'roof', 'upperGlass', 'interior', 'aftDeckFurniture', 'sails']  # sails : foc enroulé (masqué quand on déroule les voiles)
 
 # scène vierge
 bpy.ops.wm.read_factory_settings(use_empty=True)

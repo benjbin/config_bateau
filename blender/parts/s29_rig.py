@@ -327,6 +327,7 @@ def build_forestay(ctx):
         rows.append([tuple(p) for p in top + bot])
     loft(jib, rows, 1)
     sail = mk(ctx, 'rig_jib', jib, ['upholsteryExterior', 'upholsteryInterior'])
+    ctx.link(sail, 'sails')   # groupe à part : le configurateur le masque quand le foc est déroulé
     return stay, sail
 
 

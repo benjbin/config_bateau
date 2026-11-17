@@ -279,6 +279,17 @@ ui = initUI({
         ui.setActiveView(cutaway ? 'cutaway' : 'exterior');
         if (!cutaway) stage.flyTo('exterior');
         break;
+      case 'sails':
+        boat.setSails?.(!!payload);
+        if (payload) {
+          ui.toast('Hissage des voiles…');
+          // recul de caméra pour voir toute la voilure (mât de 38 m), sauf à l'intérieur ou en coupe
+          if (!cutaway && !['salon', 'helm'].includes(stage.currentView)) {
+            stage.flyTo({ label: 'Voiles', pos: [44, 9, -50], target: [-1, 15.5, 0] }, { duration: 2.4 });
+            ui.setActiveView(null);
+          }
+        }
+        break;
       case 'autorotate':
         stage.setAutoRotate(typeof payload === 'boolean' ? payload : true);
         break;
@@ -345,6 +356,7 @@ function disposeBoat(b) {
   geos.forEach((g) => g.dispose());
   mats.forEach((m) => m.dispose());
   texs.forEach((t) => t.dispose());
+  b.dispose?.();
   if (b.model !== 'cat29') releaseInteriorDayFactor();
 }
 function disposeScene(sc) {

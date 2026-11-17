@@ -9,7 +9,7 @@ import * as THREE from 'three';
 import { createBoatMaterials, addExterior } from './boat.js';
 import { makeLeatherMaps, softGoodsShader, screenCanvas } from './interior.js';
 
-export const CAT29_URL = 'assets/cat29.glb?v=2'; // ?v : contourne le cache 24 h des GLB (nginx) à chaque nouvel export
+export const CAT29_URL = 'assets/cat29.glb?v=3'; // ?v : contourne le cache 24 h des GLB (nginx) à chaque nouvel export
 
 const V3 = THREE.Vector3;
 const v = (x, y, z) => new V3(x, y, z);
@@ -64,9 +64,11 @@ export function buildCatamaran(opts = {}) {
   const interior = new THREE.Group(); interior.name = 'interior';
   const aftDeck = new THREE.Group(); aftDeck.name = 'aftDeckFurniture';
   const underwaterLights = new THREE.Group(); underwaterLights.name = 'underwaterLights';
+  const sailsG = new THREE.Group(); sailsG.name = 'sails'; // foc enroulé (GLB) + voiles déroulées : dans le toit
+  roof.add(sailsG);                                          // (effacées avec lui en vue Coupe)
   root.add(hullG, superG, roof, upperGlass, interior, aftDeck, underwaterLights);
 
-  const all = { hull: hullG, superstructure: superG, roof, upperGlass, interior, aftDeckFurniture: aftDeck };
+  const all = { hull: hullG, superstructure: superG, roof, upperGlass, interior, aftDeckFurniture: aftDeck, sails: sailsG };
   const present = Object.fromEntries(Object.entries(all).filter(([k]) => EXT.children.some((o) => o.name === k)));
   if (!present.hull) throw new Error('GLB du catamaran : groupe « hull » absent');
   const n = addExterior(EXT, present, M, uvScale);
@@ -207,10 +209,124 @@ export function buildCatamaran(opts = {}) {
   }
 
   // =========================================================================
+  // VOILES : grand-voile à enrouleur dans la bôme (hissée le long du mât) et foc sur enrouleur d'étai.
+  // setSails(true) : la grand-voile sort de la bôme et monte jusqu'en tête de mât, puis le foc se déroule
+  // autour de l'étai ; setSails(false) : animation inverse. Cotes : blender/lib/s29_lines.py + s29_rig.py.
+  // =========================================================================
+  const sails = (() => {
+    const RAKE = Math.tan(THREE.MathUtils.degToRad(1.0));
+    const mastX = (y) => 7.6 - (y - 2.35) * RAKE;
+    const luffX = (y) => mastX(y) - 0.34 + 0.13 * clamp01((y - 8.8) / 28); // face arrière du mât (s'affine)
+    // toile : blanc cassé, laizes horizontales, ralingues et renforts légèrement plus sombres
+    const cv = document.createElement('canvas'); cv.width = 256; cv.height = 1024;
+    {
+      const g = cv.getContext('2d');
+      g.fillStyle = '#f1eee6'; g.fillRect(0, 0, 256, 1024);
+      g.strokeStyle = 'rgba(120,112,98,0.28)'; g.lineWidth = 2;
+      for (let i = 1; i < 22; i++) { const y = i * 1024 / 22; g.beginPath(); g.moveTo(0, y); g.lineTo(256, y + 18); g.stroke(); }
+      g.fillStyle = 'rgba(150,142,128,0.35)';
+      g.fillRect(0, 0, 7, 1024); g.fillRect(249, 0, 7, 1024); // ralingue / chute
+      g.fillRect(0, 0, 256, 10); g.fillRect(0, 1014, 256, 10); // têtière / bordure
+    }
+    const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
+    const mat = phys({ map: tex, side: THREE.DoubleSide, roughness: 0.78, metalness: 0, sheen: 0.4, sheenRoughness: 0.6,
+      sheenColor: new THREE.Color(0xffffff), transmission: 0, specularIntensity: 0.35 });
+    M.sail = mat;
+
+    const NU = 14, NV = 44;
+    function sheet() {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(new Float32Array((NU + 1) * (NV + 1) * 3), 3));
+      const uv = [], idx = [];
+      for (let j = 0; j <= NV; j++) for (let i = 0; i <= NU; i++) uv.push(i / NU, j / NV);
+      for (let j = 0; j < NV; j++) for (let i = 0; i < NU; i++) {
+        const a = j * (NU + 1) + i, b = a + 1, c = a + NU + 1, d = c + 1;
+        idx.push(a, b, d, a, d, c);
+      }
+      g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+      g.setIndex(idx);
+      const m = new THREE.Mesh(g, mat);
+      m.castShadow = true; m.receiveShadow = true; m.frustumCulled = false; m.visible = false;
+      sailsG.add(m);
+      return m;
+    }
+    const main = sheet(), jib = sheet();
+    main.name = 'sail_main'; jib.name = 'sail_jib';
+
+    // grand-voile à corne carrée (« square top ») : bordure sur la bôme, têtière de 3,2 m, rond de chute
+    const Y0 = 8.76, YH = 36.6, CLEW = -8.2, HEADW = 3.2, ROACH = 1.25, DEPTH_M = 0.075;
+    const mainAt = (sv, u) => { // sv : 0 bordure -> 1 têtière ; u : 0 guindant -> 1 chute
+      const y = Y0 + (YH - Y0) * sv;
+      const lx = luffX(y);
+      const tx = (1 - sv) * CLEW + sv * (luffX(YH) - HEADW) - ROACH * Math.sin(Math.PI * sv) * (0.35 + 0.65 * (1 - sv));
+      const chord = lx - tx;
+      const camber = DEPTH_M * chord * 4 * u * (1 - u) * (1 - 0.35 * u) * (0.6 + 0.4 * Math.sin(Math.PI * Math.min(sv * 1.4, 1)));
+      return [lx - u * chord, y, camber + 0.04 * u * sv * chord * 0.1];
+    };
+    // foc auto-vireur : guindant sur l'étai, point d'écoute devant le mât
+    const T0 = new V3(13.0, 2.95, 0), T1 = new V3(7.75, 35.2, 0), dS = T1.clone().sub(T0);
+    const S0 = 0.035, S1 = 0.93, CL = new V3(8.35, 4.75, 0), DEPTH_J = 0.09;
+    const jibAt = (sv, u, open) => {
+      const L = T0.clone().addScaledVector(dS, S0 + (S1 - S0) * sv);
+      const lee = CL.clone().lerp(T0.clone().addScaledVector(dS, S1), Math.pow(sv, 1.05)); // chute (droite)
+      const ch = lee.sub(L), chord = ch.length();
+      const uu = u * open; // partie encore enroulée : ramenée sur l'étai
+      const camber = DEPTH_J * chord * 4 * uu * (1 - uu) * open;
+      return [L.x + ch.x * uu, L.y + ch.y * uu, camber];
+    };
+
+    let tMain = 0, tJib = 0, target = 0, raf = 0, last = 0;
+    const furled = () => sailsG.children.filter((o) => o !== main && o !== jib);
+    function update() {
+      const ease = (t) => t * t * (3 - 2 * t);
+      // grand-voile : seule la partie haute de la voile est sortie de la bôme (la têtière monte en premier)
+      const em = ease(tMain);
+      main.visible = em > 0.002;
+      if (main.visible) {
+        const p = main.geometry.attributes.position, base = 1 - em, yb = mainAt(base, 0)[1];
+        for (let j = 0; j <= NV; j++) {
+          const sv = base + em * j / NV;
+          for (let i = 0; i <= NU; i++) {
+            const q = mainAt(sv, i / NU);
+            const k = j * (NU + 1) + i;
+            p.setXYZ(k, q[0], Y0 + 0.02 + (q[1] - yb), q[2] * (0.3 + 0.7 * em));
+          }
+        }
+        p.needsUpdate = true; main.geometry.computeVertexNormals(); main.geometry.computeBoundingSphere();
+      }
+      const ej = ease(tJib);
+      jib.visible = ej > 0.002;
+      for (const o of furled()) o.visible = ej < 0.12;
+      if (jib.visible) {
+        const p = jib.geometry.attributes.position;
+        for (let j = 0; j <= NV; j++) for (let i = 0; i <= NU; i++) {
+          const q = jibAt(j / NV, i / NU, ej);
+          p.setXYZ(j * (NU + 1) + i, q[0], q[1], q[2]);
+        }
+        p.needsUpdate = true; jib.geometry.computeVertexNormals(); jib.geometry.computeBoundingSphere();
+      }
+    }
+    // durées : grand-voile 7 s, foc 5 s (déroulé après le début du hissage ; à l'affalage, le foc s'enroule d'abord)
+    function step(now) {
+      const dt = Math.min(0.1, (now - last) / 1000); last = now;
+      if (target > 0) { tMain = Math.min(1, tMain + dt / 7); if (tMain > 0.35) tJib = Math.min(1, tJib + dt / 5); }
+      else { tJib = Math.max(0, tJib - dt / 4.5); if (tJib < 0.6) tMain = Math.max(0, tMain - dt / 6); }
+      update();
+      raf = (target > 0 ? tMain < 1 || tJib < 1 : tMain > 0 || tJib > 0) ? requestAnimationFrame(step) : 0;
+    }
+    function set(open, animate = true) {
+      target = open ? 1 : 0;
+      if (!animate) { tMain = tJib = target; update(); return; }
+      if (!raf) { last = performance.now(); raf = requestAnimationFrame(step); }
+    }
+    return { set, get open() { return target > 0; }, dispose() { cancelAnimationFrame(raf); raf = 0; } };
+  })();
+
+  // =========================================================================
   // API
   // =========================================================================
   const hotspots = [
-    { id: 'rig', label: 'Gréement carbone', text: 'Sloop à mât carbone de 38 m, bôme à enrouleur et foc sur enrouleur : toute la voilure se manœuvre depuis le flybridge.', position: v(7.6, 12.0, 0), view: 'exterior' },
+    { id: 'rig', label: 'Gréement carbone', text: 'Sloop à mât carbone de 38 m, bôme à enrouleur et foc sur enrouleur : toute la voilure se manœuvre depuis le flybridge. Bouton « Voiles » pour les hisser.', position: v(7.6, 12.0, 0), view: 'exterior' },
     { id: 'bow', label: 'Lounge avant', text: 'Pont avant plein en teck avec un lounge creusé face à la mer, entre les deux étraves.', position: v(10.8, 2.9, 0), view: 'bow' },
     { id: 'hull', label: 'Deux coques', text: 'Coques galbées à franc-bord élevé, hublots allongés des cabines. Largeur hors tout 12,8 m.', position: v(9.5, 1.6, HULL_Z + 1.4), view: 'profile' },
     { id: 'glazing', label: 'Salon panoramique', text: 'Vitrage enveloppant cintré, pare-brise incliné sous la casquette du flybridge.', position: v(0.5, 3.6, 5.05), view: 'exterior' },
@@ -236,5 +352,8 @@ export function buildCatamaran(opts = {}) {
     setName,
     setLedColor,
     setDayFactor,
+    setSails: (open, animate) => sails.set(open, animate),
+    get sailsOpen() { return sails.open; },
+    dispose: () => sails.dispose(),
   };
 }

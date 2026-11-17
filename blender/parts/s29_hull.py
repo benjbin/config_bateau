@@ -734,7 +734,8 @@ def build_deck(ctx):
             for fl, fh, mat in iv:
                 q = [(a, YD, side * fl(a)), (b, YD, side * fl(b)), (b, YD, side * fh(b)), (a, YD, side * fh(a))]
                 caulk.face_o([caulk.add(p) for p in q], mat, (0, 1, 0))
-    make_obj(ctx, 'hull_deckCaulk', caulk, ['caulk', 'hullBottom'], smooth=False)
+    ob = make_obj(ctx, 'hull_deckCaulk', caulk, ['caulk', 'hullBottom'], smooth=False)
+    _cut_stair_wells(ob)
 
     # liston de bord (tableau arrière, bord avant du pont) : profil métal arrondi
     trim = MB()
@@ -743,6 +744,25 @@ def build_deck(ctx):
     for z0, z1 in ((-ZS_IN + 0.016, ZS_IN - 0.016), (ZS_OUT + 0.016, e_of(XS)), (-e_of(XS), -ZS_OUT - 0.016)):
         rbox_mb(0.03, h, z1 - z0, 0.008, Matrix.Translation((XS - 0.011, yc, 0.5 * (z0 + z1))), mb=trim, seg=3)
     make_obj(ctx, 'hull_deckTrims', trim, ['accent'], sharp_deg=50)
+
+
+def _cut_stair_wells(ob):
+    """trémies des escaliers du pont inférieur (s29_interior.STAIR_WELLS) dans le fond du pont sous le salon."""
+    try:
+        from s29_interior import STAIR_WELLS as rects
+    except Exception:
+        rects = [(-1.10, -0.12, -4.88, -2.40), (3.06, 3.72, 2.72, 4.88)]
+    bm = bmesh.new()
+    bm.from_mesh(ob.data)
+    for x0, x1, z0, z1 in rects:
+        for co, no in (((x0, 0, 0), (1, 0, 0)), ((x1, 0, 0), (1, 0, 0)), ((0, -z0, 0), (0, 1, 0)),
+                       ((0, -z1, 0), (0, 1, 0))):
+            bmesh.ops.bisect_plane(bm, geom=bm.verts[:] + bm.edges[:] + bm.faces[:], plane_co=co, plane_no=no)
+        kill = [f for f in bm.faces if x0 < f.calc_center_median().x < x1 and z0 < -f.calc_center_median().y < z1]
+        bmesh.ops.delete(bm, geom=kill, context='FACES')
+    bm.to_mesh(ob.data)
+    bm.free()
+    ob.data.update()
 
 
 # ---------------------------------------------------------------------------

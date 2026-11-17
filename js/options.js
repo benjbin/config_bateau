@@ -35,6 +35,7 @@ export const MODELS = {
     studio: 'NEOKROME',
     tagline: 'Super-catamaran à voile électrique',
     sails: true, // bouton « Voiles » (animation hissage / enroulement)
+    cabins: true, // bouton « Cabines » : pont inférieur coupé (vue de dessus)
     specs: [
       ['Longueur hors tout', '28,7 m'],
       ['Largeur hors tout', '12,8 m'],

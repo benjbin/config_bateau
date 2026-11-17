@@ -66,6 +66,7 @@ const ICONS = {
   images: '<rect x="3" y="5" width="18" height="14" rx="1.5"/><path d="m3 16 5-5 4 4 3-3 6 6"/><circle cx="16" cy="9" r="1.5"/>',
   doc: '<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 12h6M9 16h6"/>',
   sail: '<path d="M11 3v15M11 4.5C15 8 17.5 12.5 18 17H11"/><path d="M9 6.5 4.5 17H9"/><path d="M3 20.5h18"/>',
+  bed: '<path d="M3 18V7M3 14h18v4M21 14v-2.5a2.5 2.5 0 0 0-2.5-2.5H11v5"/><circle cx="7" cy="11.5" r="1.8"/>',
   eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>',
 };
 const icon = (name, cls = 'ico') =>
@@ -174,6 +175,7 @@ export function initUI({ options, state: initialState, onChange = () => {}, onVi
 
           <div class="toolrail glass" id="tools" role="toolbar" aria-orientation="vertical" aria-label="Outils">
             <button type="button" class="tool" data-tool="cutaway" aria-pressed="false" data-tip="Vue en coupe">${icon('cut')}<span class="sr">Vue en coupe</span></button>
+            <button type="button" class="tool" data-tool="cabins" aria-pressed="false" data-tip="Cabines (pont inférieur)" hidden>${icon('bed')}<span class="sr">Cabines</span></button>
             <button type="button" class="tool" data-tool="sails" aria-pressed="false" data-tip="Hisser les voiles" hidden>${icon('sail')}<span class="sr">Voiles</span></button>
             <button type="button" class="tool" data-tool="autorotate" aria-pressed="false" data-tip="Rotation auto">${icon('rotate')}<span class="sr">Rotation auto</span></button>
             <button type="button" class="tool" data-tool="hotspots" aria-pressed="true" data-tip="Points d’intérêt">${icon('pin')}<span class="sr">Repères</span></button>
@@ -399,6 +401,7 @@ export function initUI({ options, state: initialState, onChange = () => {}, onVi
   function setActiveView(id) {
     viewBtns.forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === id)));
     toolBtn('cutaway').setAttribute('aria-pressed', String(id === 'cutaway'));
+    toolBtn('cabins').setAttribute('aria-pressed', String(id === 'cabins'));
   }
 
   let hotspotsOn = true;
@@ -406,7 +409,7 @@ export function initUI({ options, state: initialState, onChange = () => {}, onVi
     const b = e.target.closest('.tool');
     if (!b) return;
     const n = b.dataset.tool;
-    if (n === 'cutaway' || n === 'autorotate' || n === 'sails') {
+    if (n === 'cutaway' || n === 'autorotate' || n === 'sails' || n === 'cabins') {
       const on = b.getAttribute('aria-pressed') !== 'true';
       b.setAttribute('aria-pressed', String(on));
       closeBubble();
@@ -854,6 +857,7 @@ export function initUI({ options, state: initialState, onChange = () => {}, onVi
     $('[data-act="gallery"]').hidden = !galleryFor(curModel.id).length;
     const sb = $('.tool[data-tool="sails"]'); // voiles : modèles gréés seulement, repliées à chaque changement de modèle
     sb.hidden = !curModel.sails; sb.setAttribute('aria-pressed', 'false'); sb.dataset.tip = 'Hisser les voiles';
+    const cb = $('.tool[data-tool="cabins"]'); cb.hidden = !curModel.cabins; cb.setAttribute('aria-pressed', 'false');
     document.title = `${modelName} — Configurateur`;
   }
   function selectModel(id) {

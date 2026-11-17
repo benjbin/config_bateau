@@ -195,6 +195,8 @@ function applyState(boat, stage, s, prev = {}) {
 // ---------- démarrage ----------
 let ui, stage, boat;
 let cutaway = false;
+let cabins = false; // vue « Cabines » (pont inférieur coupé) du catamaran
+function leaveCabins() { if (cabins) { cabins = false; boat?.setLowerDeck?.(false); } }
 let interiorGlass = false;
 // vues intérieures : vitrages beaucoup plus transparents pour voir franchement la mer
 // (transmission ×2 et reflet atténué : voir glassParams)
@@ -225,6 +227,7 @@ ui = initUI({
   onView: (id) => {
     if (!stage) return;
     if (cutaway && id !== 'cutaway') { cutaway = false; stage.setCutaway(false, boat); }
+    leaveCabins();
     ui.setActiveView(id);
     setInteriorGlass(id === 'salon' || id === 'helm');
     stage.flyTo(id);
@@ -268,12 +271,22 @@ ui = initUI({
         ui.setState(state);
         writeStateToURL(state);
         if (cutaway) { cutaway = false; stage.setCutaway(false, boat); }
+        leaveCabins();
         ui.setActiveView('exterior');
         stage.flyTo('exterior');
         ui.toast('Configuration réinitialisée');
         break;
       }
+      case 'cabins':
+        cabins = !!payload && !!boat.setLowerDeck;
+        if (cabins && cutaway) { cutaway = false; stage.setCutaway(false, boat); }
+        setInteriorGlass(false);
+        boat.setLowerDeck?.(cabins);
+        ui.setActiveView(cabins ? 'cabins' : 'exterior');
+        stage.flyTo(cabins ? { label: 'Cabines', pos: [7, 47, -24], target: [-0.5, 0.6, 0], panelShift: true } : 'exterior', { duration: 1.8 });
+        break;
       case 'cutaway':
+        leaveCabins();
         cutaway = typeof payload === 'boolean' ? payload : !cutaway;
         stage.setCutaway(cutaway, boat);
         ui.setActiveView(cutaway ? 'cutaway' : 'exterior');
@@ -284,7 +297,7 @@ ui = initUI({
         if (payload) {
           ui.toast('Hissage des voiles…');
           // recul de caméra pour voir toute la voilure (mât de 38 m), sauf à l'intérieur ou en coupe
-          if (!cutaway && !['salon', 'helm'].includes(stage.currentView)) {
+          if (!cutaway && !cabins && !['salon', 'helm'].includes(stage.currentView)) {
             stage.flyTo({ label: 'Voiles', pos: [50, 8, -62], target: [-1, 17.5, 0] }, { duration: 2.4 });
             ui.setActiveView(null);
           }
@@ -403,6 +416,7 @@ async function switchModel(id) {
   }
   const view = cutaway ? 'exterior' : (stage.currentView || 'exterior');
   if (cutaway) { cutaway = false; ui.setActiveView('exterior'); }
+  cabins = false; // (le nouveau bateau part toujours en pont principal)
   const old = boat;
   for (const k of [...tweens.keys()]) tweens.delete(k);
   setWetLine(state.setting === 'sea' ? 1 : 0);

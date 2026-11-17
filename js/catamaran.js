@@ -9,7 +9,7 @@ import * as THREE from 'three';
 import { createBoatMaterials, addExterior } from './boat.js';
 import { makeLeatherMaps, softGoodsShader, screenCanvas } from './interior.js';
 
-export const CAT29_URL = 'assets/cat29.glb?v=3'; // ?v : contourne le cache 24 h des GLB (nginx) à chaque nouvel export
+export const CAT29_URL = 'assets/cat29.glb?v=4'; // ?v : contourne le cache 24 h des GLB (nginx) à chaque nouvel export
 
 const V3 = THREE.Vector3;
 const v = (x, y, z) => new V3(x, y, z);
@@ -66,9 +66,11 @@ export function buildCatamaran(opts = {}) {
   const underwaterLights = new THREE.Group(); underwaterLights.name = 'underwaterLights';
   const sailsG = new THREE.Group(); sailsG.name = 'sails'; // foc enroulé (GLB) + voiles déroulées : dans le toit
   roof.add(sailsG);                                          // (effacées avec lui en vue Coupe)
-  root.add(hullG, superG, roof, upperGlass, interior, aftDeck, underwaterLights);
+  const cabinsG = new THREE.Group(); cabinsG.name = 'cabins'; // pont inférieur : visible en vue « Cabines » seulement
+  cabinsG.visible = false;
+  root.add(hullG, superG, roof, upperGlass, interior, aftDeck, underwaterLights, cabinsG);
 
-  const all = { hull: hullG, superstructure: superG, roof, upperGlass, interior, aftDeckFurniture: aftDeck, sails: sailsG };
+  const all = { hull: hullG, superstructure: superG, roof, upperGlass, interior, aftDeckFurniture: aftDeck, sails: sailsG, cabins: cabinsG };
   const present = Object.fromEntries(Object.entries(all).filter(([k]) => EXT.children.some((o) => o.name === k)));
   if (!present.hull) throw new Error('GLB du catamaran : groupe « hull » absent');
   const n = addExterior(EXT, present, M, uvScale);
@@ -440,6 +442,60 @@ export function buildCatamaran(opts = {}) {
   })();
 
   // =========================================================================
+  // PONT INFÉRIEUR (vue « Cabines ») : tout ce qui est au-dessus du pont est masqué, la coque est coupée net à
+  // y = CUT_LOW (plan horizontal qui suit le bateau dans la houle), faces coupées teintées comme la vue Coupe.
+  // =========================================================================
+  const lowerDeck = (() => {
+    const CUT_LOW = 2.05;
+    const plane = new THREE.Plane(new V3(0, -1, 0), CUT_LOW);
+    const hidden = [superG, roof, upperGlass, interior, aftDeck];
+    let on = false, raf = 0, swaps = null;
+    const n = new V3(), pt = new V3();
+    function track() {
+      root.updateMatrixWorld();
+      n.set(0, -1, 0).transformDirection(root.matrixWorld);
+      pt.set(0, CUT_LOW, 0).applyMatrix4(root.matrixWorld);
+      plane.setFromNormalAndCoplanarPoint(n, pt);
+      raf = on ? requestAnimationFrame(track) : 0;
+    }
+    function sectionMat(m) {
+      const c = m.clone(), ob = m.onBeforeCompile;
+      c.clippingPlanes = [plane]; c.side = THREE.DoubleSide;
+      c.onBeforeCompile = (sh, r) => {
+        if (ob && ob !== THREE.Material.prototype.onBeforeCompile) ob.call(c, sh, r);
+        sh.fragmentShader = sh.fragmentShader.replace('#include <dithering_fragment>',
+          '#include <dithering_fragment>\n  if (!gl_FrontFacing) gl_FragColor = vec4(0.30, 0.285, 0.265, 1.0);');
+      };
+      const key = m.customProgramCacheKey ? m.customProgramCacheKey() : '';
+      c.customProgramCacheKey = () => key + '|lowdeck';
+      return c;
+    }
+    function set(v) {
+      v = !!v;
+      if (v === on) return;
+      on = v;
+      for (const g of hidden) g.visible = !on;
+      cabinsG.visible = on;
+      if (on) {
+        swaps = [];
+        const cache = new Map();
+        for (const g of [hullG, underwaterLights]) g.traverse((o) => {
+          if (!o.isMesh || Array.isArray(o.material) || o.material.transparent && o.material !== M.name) return;
+          if (!cache.has(o.material)) cache.set(o.material, sectionMat(o.material));
+          swaps.push([o, o.material]); o.material = cache.get(o.material);
+        });
+        track();
+      } else {
+        cancelAnimationFrame(raf); raf = 0;
+        const done = new Set();
+        for (const [o, m] of swaps || []) { if (!done.has(o.material)) { done.add(o.material); o.material.dispose(); } o.material = m; }
+        swaps = null;
+      }
+    }
+    return { set, get on() { return on; }, dispose() { set(false); } };
+  })();
+
+  // =========================================================================
   // API
   // =========================================================================
   const hotspots = [
@@ -455,6 +511,15 @@ export function buildCatamaran(opts = {}) {
     { id: 'pods', label: 'Propulsion électrique', text: 'Un pod électrique sous chaque coque, hélices contrarotatives ; propulseur d’étrave dans chaque coque.', position: v(-10.4, -0.9, -HULL_Z), view: 'stern' },
   ];
 
+  const cabinHotspots = [
+    { id: 'c_owner', label: 'Suite propriétaire', text: 'Coque bâbord : grande chambre au centre du bateau avec bureau et canapé, dressing, salle de bain avec baignoire, double vasque et douche à l’italienne.', position: v(-3.0, 1.2, -HULL_Z - 0.2) },
+    { id: 'c_guest1', label: 'Cabine invités', text: 'Coque tribord : cabine double avec dressing, bureau et salle de douche privative.', position: v(-1.6, 1.2, HULL_Z + 0.2) },
+    { id: 'c_guest2', label: 'Seconde cabine invités', text: 'Coque tribord avant : cabine double avec salle de douche privative.', position: v(5.6, 1.2, HULL_Z + 0.2) },
+    { id: 'c_crew', label: 'Équipage', text: 'Avant des deux coques : cabine du capitaine avec salle d’eau, cabine à couchettes, carré équipage et buanderie, accès indépendant par le pont.', position: v(10.4, 1.1, -HULL_Z) },
+    { id: 'c_garage', label: 'Garage', text: 'Entre les coques, sous le cockpit : scooters sous-marins et planches de paddle, ouverture sur la plateforme arrière.', position: v(-11.6, 1.7, 0) },
+    { id: 'c_tech', label: 'Locaux techniques', text: 'Arrière des coques : moteurs électriques et équipements ; sous la nef : batteries et réservoirs.', position: v(-10.3, 1.2, HULL_Z) },
+  ];
+
   setName('SILLAGE 29');
   setLedColor(0xffb86b);
   setDayFactor(0);
@@ -464,13 +529,15 @@ export function buildCatamaran(opts = {}) {
     hullProfile: 'cat29',
     root,
     materials,
-    parts: { roof, upperGlass, interior, underwaterLights, aftDeck, hull: hullG, superstructure: superG },
-    hotspots,
+    parts: { roof, upperGlass, interior, underwaterLights, aftDeck, hull: hullG, superstructure: superG, cabins: cabinsG },
+    get hotspots() { return lowerDeck.on ? cabinHotspots : hotspots; },
     setName,
     setLedColor,
     setDayFactor,
     setSails: (open, animate) => sails.set(open, animate),
+    hasLowerDeck: () => cabinsG.children.length > 0,
+    setLowerDeck: (on) => lowerDeck.set(on),
     get sailsOpen() { return sails.open; },
-    dispose: () => sails.dispose(),
+    dispose: () => { sails.dispose(); lowerDeck.dispose(); },
   };
 }

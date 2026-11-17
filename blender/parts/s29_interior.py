@@ -54,6 +54,13 @@ except Exception:
     pass
 
 
+# TRÉMIES D'ESCALIER vers le pont inférieur (module s29_cabins) : (x0, x1, z0, z1) dans le plancher du salon.
+# Accès par le côté nef (|z| le plus petit), garde-corps verre sur les deux grands côtés. Bâbord : entre la
+# cuisine (x <= -1,19) et le dos du canapé (x >= -0,05) ; tribord : entre la crédence (x <= 3,01) et les sièges
+# pilote (|z| <= 2,66).
+STAIR_WELLS = [(-1.10, -0.12, -4.88, -2.40), (3.06, 3.72, 2.72, 4.88)]
+
+
 def clamp(v, a, b):
     return a if v < a else b if v > b else v
 
@@ -1359,6 +1366,68 @@ def build_fly(ctx, objs):
     objs += [sb, sc]
 
 
+def build_stair_wells(ctx, objs):
+    """garde-corps verre des trémies + haut des escaliers (au-dessus de y 2,049 ; le reste est dans 'cabins')."""
+    gl = Obj('int_stairGuardGlass', 'interior', wn=False)
+    mt = Obj('int_stairGuard', 'interior', wn=True)
+    for x0, x1, z0, z1 in STAIR_WELLS:
+        sd = 1 if z0 + z1 > 0 else -1
+        za, zb = (z0, z1) if sd > 0 else (z1, z0)          # za : côté nef (accès), zb : côté paroi
+        zs, ze = sorted((za, zb - sd * 0.03))
+        for xg in (x0 - 0.035, x1 + 0.035):
+            blk(gl, 'glass', xg - 0.006, xg + 0.006, FY + 0.04, FY + 0.95, zs, ze, 0.004)
+            blk(mt, 'metalDark', xg - 0.02, xg + 0.02, FY, FY + 0.05, zs, ze, 0.006)
+            p = MB()
+            tube(p, [(xg, FY + 0.97, zs), (xg, FY + 0.97, ze)], 0.02, seg=12, caps=True, round_caps=True)
+            tube(p, [(xg, FY, za), (xg, FY + 0.97, za)], 0.022, seg=12, caps=True, round_caps=True)
+            mt.put(p, None, 'chrome')
+        # nez de trémie (côté accès) : profil inox
+        blk(mt, 'chrome', x0, x1, FY - 0.004, FY + 0.004, min(za, za - sd * 0.03), max(za, za - sd * 0.03), 0.003)
+    objs += [gl, mt]
+    try:
+        import s29_cabins as _c
+        st = Obj('int_stairTop', 'interior', wn=True)
+        for w in STAIR_WELLS:
+            for key, mb in _c.stair_parts(w, ylo=2.049, yhi=FY, rails=False).items():
+                if mb.f:
+                    st.put(mb, None, key)
+        objs.append(st)
+    except Exception as e:
+        print('[s29_interior] haut des escaliers indisponible :', e)
+
+
+def cut_stair_wells(ob, rects, y0, y1):
+    """perce le plancher (prisme) : découpe par les 4 plans de chaque trémie, supprime les faces horizontales
+    intérieures, ajoute les joues de la trémie (normales vers le vide)."""
+    import bmesh
+    me = ob.data
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    for x0, x1, z0, z1 in rects:
+        for co, no in (((x0, 0, 0), (1, 0, 0)), ((x1, 0, 0), (1, 0, 0)), ((0, -z0, 0), (0, 1, 0)),
+                       ((0, -z1, 0), (0, 1, 0))):
+            bmesh.ops.bisect_plane(bm, geom=bm.verts[:] + bm.edges[:] + bm.faces[:], plane_co=co, plane_no=no)
+        kill = []
+        for f in bm.faces:
+            c = f.calc_center_median()
+            if x0 < c.x < x1 and z0 < -c.y < z1 and abs(f.normal.z) > 0.9:
+                kill.append(f)
+        bmesh.ops.delete(bm, geom=kill, context='FACES')
+        P = lambda x, y, z: bm.verts.new((x, -z, y))
+        for q in (((x0, z0), (x0, z1), (1, 0)), ((x1, z1), (x1, z0), (-1, 0)), ((x1, z0), (x0, z0), (0, 1)),
+                  ((x0, z1), (x1, z1), (0, -1))):
+            (ax, az), (bx, bz), (nx, nz) = q
+            f = bm.faces.new([P(ax, y0, az), P(bx, y0, bz), P(bx, y1, bz), P(ax, y1, az)])
+            f.normal_update()
+            if f.normal.x * nx + (-f.normal.y) * nz < 0:
+                f.normal_flip()
+            f.smooth = False
+    bmesh.ops.remove_doubles(bm, verts=bm.verts[:], dist=1e-5)
+    bm.to_mesh(me)
+    bm.free()
+    me.update()
+
+
 def build(ctx):
     objs = []
     build_salon_floor(ctx, objs)
@@ -1371,5 +1440,8 @@ def build(ctx):
     build_fwd_lounge(ctx, objs)
     build_sea_lounge(ctx, objs)
     build_fly(ctx, objs)
+    build_stair_wells(ctx, objs)
     for o in objs:
-        finalize(ctx, o)
+        ob = finalize(ctx, o)
+        if ob is not None and o.name == 'int_floor':
+            cut_stair_wells(ob, STAIR_WELLS, FY - 0.06, FY)

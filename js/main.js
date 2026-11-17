@@ -1,5 +1,6 @@
 // DIÈDRE 29 — orchestration : options -> modèle 3D -> scène -> UI
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import * as options from './options.js';
 import { GROUPS, DEFAULT_STATE, findItem } from './options.js';
 import { buildBoat, refineBoatMaterials, setLedGain, setWetLine } from './boat.js';
@@ -277,10 +278,33 @@ ui = initUI({
 
 ui.setLoading(0.1);
 
+// Extérieur modélisé sous Blender (coque, pont, superstructure, vitrages, peau du toit) : GLB préchargé AVANT
+// buildBoat (synchrone). Échec (réseau, fichier absent, GLB invalide) → modèle procédural complet de boat.js.
+// ?procedural dans l'URL force le modèle procédural (comparaison, diagnostic).
+const EXTERIOR_URL = 'assets/diedre29-exterior.glb';
+function loadExterior() {
+  if (new URLSearchParams(location.search).has('procedural')) return Promise.resolve(null);
+  return new GLTFLoader().loadAsync(EXTERIOR_URL, (e) => {
+    if (e.lengthComputable && e.total) ui.setLoading(0.1 + 0.3 * (e.loaded / e.total));
+  }).then((gltf) => gltf.scene, (err) => {
+    console.warn('[DIÈDRE 29] extérieur GLB indisponible (' + EXTERIOR_URL + ') : modèle procédural utilisé.', err);
+    return null;
+  });
+}
+const exteriorReady = loadExterior();
+
 try {
   stage = createStage(ui.getViewportEl());
-  ui.setLoading(0.4);
-  boat = buildBoat();
+  const exterior = await exteriorReady; // téléchargé pendant createStage
+  ui.setLoading(0.5);
+  try {
+    boat = buildBoat({ exterior });
+  } catch (err) {
+    if (!exterior) throw err;
+    console.warn('[DIÈDRE 29] intégration du GLB extérieur impossible : modèle procédural utilisé.', err);
+    boat = buildBoat();
+  }
+  performance.mark('d29-boat-built');
   boat.lib = refineBoatMaterials(boat, { maxAnisotropy: stage.renderer.capabilities.getMaxAnisotropy() });
   setWetLine(state.setting === 'sea' ? 1 : 0); // vitrage bi-couche, inox brossé, teck massif (avant stage.setBoat)
   ui.setLoading(0.8);
@@ -304,6 +328,7 @@ try {
   });
   ui.setActiveView('exterior');
   stage.flyTo('exterior', { duration: 0.01 });
+  performance.mark('d29-ready');
   setTimeout(() => ui.setLoading(false), 350);
 } catch (err) {
   console.error(err);

@@ -367,8 +367,9 @@ function cleanTris(g) {
 
 // Regroupe les géométries par (groupe, matériau) pour limiter les draw calls
 class Batcher {
-  constructor() { this.map = new Map(); }
+  constructor() { this.map = new Map(); this.skip = null; }
   add(group, mat, geo, o = {}) {
+    if (this.skip && this.skip(group, mat)) return; // pièce remplacée par le GLB extérieur (voir buildBoat)
     const cast = o.cast !== false, recv = o.receive !== false, order = o.order || 0;
     const key = `${group.uuid}|${mat.uuid}|${cast}|${recv}|${order}|${o.name || ''}`;
     let e = this.map.get(key);
@@ -928,12 +929,163 @@ export function refineBoatMaterials(boat, opts = {}) {
 }
 
 // ---------------------------------------------------------------------------
+// Extérieur Blender (GLB : assets/diedre29-exterior.glb, voir blender/build.py)
+// ---------------------------------------------------------------------------
+// Nœuds racines 'hull', 'superstructure', 'roof', 'upperGlass' (= groupes three.js) ; maillages déjà en repère
+// three (+X avant, +Y haut, +Z tribord, m). Nom de matériau glTF = clé de `materials` : chaque primitive reçoit
+// le matériau partagé du configurateur (options couleur / teck / vitrage / ambiances inchangées).
+// UV du GLB en mètres (1 UV = 1 m, projection monde par face comme worldUV, fil du teck le long de u), V inversé
+// par l'export glTF (v = 1 − v_Blender) : on rétablit v puis on divise par uvScale (densité identique à worldUV).
+const PLANK_P = 0.06; // pas des lattes du pont (joints de la texture de teck à w = k·P)
+// Lattes du GLB qui chevauchent un joint peint de la texture (latte de rive de 14 cm et sa courbe, latte d'axe
+// à cheval sur z = 0, lattes de plateforme / marches décalées) : chaque latte prend UNE rangée de la texture sur
+// toute sa largeur (repère : groupes de sommets de même u = une section de latte) → plus de joint peint au milieu
+// d'une latte réelle. kingRow : lattes longues du pont (rive, axe) sur la rangée 0 (« king plank », sans about,
+// comme le pont procédural) ; sinon rangée = rang de la latte (tons alternés comme le reste du pont).
+function remapPlanks(g, U, W, kingRow) {
+  const n = U.length, idx = g.index && g.index.array;
+  if (!idx) return;
+  const par = new Int32Array(n); for (let i = 0; i < n; i++) par[i] = i;
+  const find = (i) => { while (par[i] !== i) { par[i] = par[par[i]]; i = par[i]; } return i; };
+  for (let t = 0; t < idx.length; t += 3) {
+    const a = find(idx[t]), b = find(idx[t + 1]), c = find(idx[t + 2]);
+    par[b] = a; par[c] = a;
+  }
+  const comps = new Map();
+  for (let i = 0; i < n; i++) { const r = find(i); let c = comps.get(r); if (!c) comps.set(r, (c = [])); c.push(i); }
+  const out = new Map();
+  for (const vs of comps.values()) {
+    const rows = new Map();
+    let u0 = Infinity, u1 = -Infinity;
+    for (const i of vs) {
+      const k = Math.round(U[i] * 1e4);
+      let r = rows.get(k); if (!r) rows.set(k, (r = { lo: Infinity, hi: -Infinity }));
+      r.lo = Math.min(r.lo, W[i]); r.hi = Math.max(r.hi, W[i]);
+      u0 = Math.min(u0, U[i]); u1 = Math.max(u1, U[i]);
+    }
+    let straddle = false;
+    for (const r of rows.values()) if (Math.ceil((r.lo + 0.004) / PLANK_P) * PLANK_P < r.hi - 0.004) { straddle = true; break; }
+    if (!straddle) continue;
+    let wm = 0; for (const i of vs) wm += W[i];
+    const row = kingRow && u1 - u0 > 0.9 ? 0 : ((Math.round(wm / vs.length / PLANK_P) % 8) + 8) % 8;
+    for (const i of vs) {
+      const r = rows.get(Math.round(U[i] * 1e4)), t = r.hi - r.lo > 1e-6 ? (W[i] - r.lo) / (r.hi - r.lo) : 0.5;
+      out.set(i, 1 - (row + 0.08 + 0.84 * t) / 8);
+    }
+  }
+  return out;
+}
+function prepareExteriorUV(g, mat, uvScale, plank, kingRow) {
+  const a = g.attributes.uv;
+  if (!a) return;
+  const n = a.count, U = new Float32Array(n), W = new Float32Array(n);
+  for (let i = 0; i < n; i++) { U[i] = a.getX(i); W[i] = 1 - a.getY(i); }
+  const s = uvScale.get(mat) || [1, 1];
+  const rows = plank ? remapPlanks(g, U, W, kingRow) : null;
+  const uv = new Float32Array(n * 2);
+  for (let i = 0; i < n; i++) {
+    uv[i * 2] = U[i] / s[0];
+    uv[i * 2 + 1] = rows && rows.has(i) ? rows.get(i) : W[i] / s[1];
+  }
+  g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+}
+// Fond calfaté du pont GLB (joints géométriques de 5 mm entre lattes réelles) : de loin, le joint devient
+// sous-pixel et crénelle (pointillés noirs sur tout le pont, vue de dessus). Le calfatage du groupe hull prend
+// donc, quand l'empreinte d'un pixel dépasse ~2 mm, la teinte moyenne du pont (M.deck.color × moyenne de la
+// carte, joints peints compris) — comme le ferait le mipmap d'une texture. Le calfatage des vitrages garde M.caulk.
+function mapMean(tex, cache) {
+  const img = tex && tex.image;
+  if (!img || !img.width) return null;
+  let c = cache.get(img);
+  if (!c) {
+    const cv = document.createElement('canvas'); cv.width = 32; cv.height = 8;
+    const g = cv.getContext('2d'); g.drawImage(img, 0, 0, 32, 8);
+    const d = g.getImageData(0, 0, 32, 8).data, s = [0, 0, 0];
+    for (let i = 0; i < d.length; i += 4) for (let k = 0; k < 3; k++) s[k] += d[i + k] / 255;
+    c = new THREE.Color().setRGB(s[0] / 256, s[1] / 256, s[2] / 256, THREE.SRGBColorSpace);
+    cache.set(img, c);
+  }
+  return c;
+}
+function makeDeckCaulk(M) {
+  const m = M.caulk.clone();
+  m.name = 'deckCaulk';
+  const far = new THREE.Color(), cache = new Map();
+  const uFar = { get value() { const a = mapMean(M.deck.map, cache); far.copy(M.deck.color); if (a) far.multiply(a); return far; } };
+  m.onBeforeCompile = (s) => {
+    s.uniforms.uCaulkFar = uFar;
+    s.fragmentShader = 'uniform vec3 uCaulkFar;\n' + s.fragmentShader.replace('#include <color_fragment>',
+      '#include <color_fragment>\n\t{ float caulkFp = length( fwidth( vViewPosition ) );\n' +
+      '\t  diffuseColor.rgb = mix( diffuseColor.rgb, uCaulkFar, smoothstep( 0.0015, 0.006, caulkFp ) ); }');
+  };
+  m.customProgramCacheKey = () => 'deckCaulkFar';
+  return m;
+}
+// Ajoute les maillages du GLB dans les groupes du configurateur ; renvoie le nombre de maillages ajoutés.
+function addExterior(scene, groups, M, uvScale) {
+  scene.updateMatrixWorld(true);
+  const done = new Set(), unused = new Set();
+  let count = 0;
+  for (const [key, group] of Object.entries(groups)) {
+    const src = scene.children.find((o) => o.name === key);
+    if (!src) { console.warn(`[boat] GLB extérieur : nœud « ${key} » absent`); continue; }
+    const inv = new THREE.Matrix4().copy(src.matrixWorld).invert();
+    const list = [], batches = new Map(); // matériau → primitives (fusionnées : un draw call par groupe × matériau)
+    src.traverse((o) => { if (o.isMesh) list.push(o); });
+    for (const o of list) {
+      let top = o; while (top.parent && top.parent !== src) top = top.parent; // nœud glTF (objet Blender)
+      for (const gm of Array.isArray(o.material) ? o.material : [o.material]) unused.add(gm);
+      const key2 = o.material && o.material.name;
+      let mat = M[key2];
+      if (mat && mat === M.caulk && group === groups.hull) mat = M.deckCaulk || (M.deckCaulk = makeDeckCaulk(M));
+      if (!mat || !mat.isMaterial) { console.warn(`[boat] GLB extérieur : matériau « ${key2} » inconnu (${top.name}) — ignoré`); continue; }
+      let g = o.geometry;
+      if (!done.has(g)) {
+        done.add(g);
+        prepareExteriorUV(g, mat, uvScale, mat === M.deck && /Boards$/.test(top.name), top.name === 'hull_deckBoards');
+      }
+      const mx = new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld);
+      g = g.clone();
+      if (!mx.equals(new THREE.Matrix4())) g.applyMatrix4(mx);
+      for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(k)) g.deleteAttribute(k);
+      if (!g.attributes.uv) g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2));
+      if (!g.index) g.setIndex([...Array(g.attributes.position.count).keys()]);
+      g.morphAttributes = {}; g.clearGroups();
+      let e = batches.get(mat); if (!e) batches.set(mat, (e = { geos: [], names: [] }));
+      e.geos.push(g); e.names.push(top.name);
+    }
+    for (const [mat, e] of batches) {
+      let parts = [e.geos[0]];
+      if (e.geos.length > 1) {
+        const merged = mergeGeometries(e.geos, false);
+        parts = merged ? [merged] : e.geos; // (repli : un maillage par primitive)
+      }
+      const short = [...new Set(e.names.map((n) => (n.startsWith(key + '__') ? n.split('__').pop() : n.replace(/^hull_/, ''))))];
+      const label = `${key}__${Object.keys(M).find((k) => M[k] === mat) || mat.name}__${short.join('+')}`;
+      for (const g of parts) {
+        g.computeBoundingSphere();
+        const m = new THREE.Mesh(g, mat);
+        m.name = label;
+        const glass = mat === M.glass;
+        m.castShadow = !glass; m.receiveShadow = !glass;
+        if (glass) m.renderOrder = 3; // comme les vitrages procéduraux (teinte en 3, reflet en 4 : refineBoatMaterials)
+        group.add(m);
+        count++;
+      }
+    }
+  }
+  for (const gm of unused) gm.dispose(); // matériaux glTF remplacés
+  for (const g of done) g.dispose();     // géométries glTF d'origine (copiées / fusionnées ci-dessus)
+  return count;
+}
+
+// ---------------------------------------------------------------------------
 // Construction
 // ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
-// Construction
-// ---------------------------------------------------------------------------
-export function buildBoat() {
+// opts.exterior : scène GLTF (gltf.scene) de l'extérieur Blender — remplace coque, pont, superstructure, vitrage
+// et peau du toit procéduraux (voir addExterior et la liste des pièces conservées plus bas).
+export function buildBoat(opts = {}) {
+  const EXT = opts.exterior || null;
   const phys = (p) => new THREE.MeshPhysicalMaterial(p);
   const teak = makeTeakMaps();
   const wood = makeWoodTexture();
@@ -1030,6 +1182,15 @@ export function buildBoat() {
 
   const B = new Batcher();
   const M = materials;
+  // Extérieur Blender fourni : les pièces qu'il remplace ne sont pas construites. Les blocs de coque sont sautés
+  // (if (!EXT)) ; filet de sécurité au niveau du Batcher : tout le groupe hull (le nom de coque, seul conservé,
+  // est un maillage direct), tout upperGlass, et dans superstructure tout sauf les optiques des feux (navRed /
+  // navGreen : leurs boîtiers sont dans le GLB). Toit : lignes sautées une à une plus bas (anneau de gouttière,
+  // bandeau, joint creux, chanfrein, dessus, sous-face des joues) — radar, feu blanc et plafond restent.
+  if (EXT) {
+    const superMats = new Set([M.accent, M.hullBottom, M.metalDark, M.superstructure]);
+    B.skip = (group, mat) => group === hullG || group === upperGlass || (group === superG && superMats.has(mat));
+  }
   const both = (group, mat, g, o) => { B.add(group, mat, g, o); B.add(group, mat, mirrorZ(g), o); };
   const mz = (p) => v(p.x, p.y, -p.z);
 
@@ -1082,6 +1243,7 @@ export function buildBoat() {
     g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
     return g;
   }
+  if (!EXT) {
   both(hullG, M.hullBottom, strip(P.keel, P.chine));
   both(hullG, M.hullBottom, strip(P.chine, P.wl));
   both(hullG, M.hull, strip(P.wl, P.knuckle), { name: 'flancBas' });
@@ -1109,6 +1271,7 @@ export function buildBoat() {
     both(hullG, M.hullBottom, tubePath(rail, tp(0.0225), 16), { name: 'rubRail' });
     both(hullG, M.chrome, tubePath(ins, tp(0.0075), 12), { cast: false });
   }
+  } // !EXT (coque)
 
   // ---------- pont teck avec trémie de la cabine (salon en contrebas) ----------
   const FLOOR = 1.70;          // sol du salon (de plain-pied avec le pont arrière)
@@ -1131,7 +1294,7 @@ export function buildBoat() {
     }
     return 0;
   };
-  {
+  if (!EXT) {
     const bw = new Geo(), cap = new Geo(), deck = new Geo(), wing = new Geo();
     for (let i = 0; i < N; i++) {
       const xa = xs[i], xb = xs[i + 1], sa = secs[i], sb = secs[i + 1];
@@ -1296,7 +1459,7 @@ export function buildBoat() {
 
   // ---------- tableau arrière + découpe d'escalier ----------
   const sT = section(XS);
-  {
+  if (!EXT) {
     const c = [
       [sT.W, sT.sheer], [sT.knZ, sT.knY], [sT.chZ, sT.chY], [0, sT.keel], [-sT.chZ, sT.chY], [-sT.knZ, sT.knY], [-sT.W, sT.sheer],
       [-Z_STAIR, sT.sheer], [-Z_STAIR, Y_PLAT], [Z_STAIR, Y_PLAT], [Z_STAIR, sT.sheer],
@@ -1336,7 +1499,7 @@ export function buildBoat() {
   const X_SWEEP = -10.0;
   const bulwarkTop = (x) => x <= X_CHEEK ? deckY(x) + 0.72 : sheer(x) + 0.59 * (1 - ss(X_CHEEK, X_SWEEP, x));
   const BT = 0.36;
-  {
+  if (!EXT) {
     const out = new Geo(), top = new Geo(), inn = new Geo();
     const xsB = [XS, -12.9, -12.6, -12.3, -12.0, -11.7, X_CHEEK];
     for (let i = 1; i <= 14; i++) xsB.push(X_CHEEK + (X_SWEEP - X_CHEEK) * i / 14); // plongée progressive
@@ -1377,7 +1540,7 @@ export function buildBoat() {
   }
 
   // ---------- escalier central 5 marches ----------
-  {
+  if (!EXT) {
     const nSteps = 5, rise = (deckY(X_STAIR) - Y_PLAT) / (nSteps + 1), run = (X_STAIR - XS) / nSteps;
     for (let i = 1; i <= nSteps; i++) {
       const yTop = deckY(X_STAIR) - rise * i;
@@ -1391,7 +1554,7 @@ export function buildBoat() {
   }
 
   // ---------- plateforme de bain épaisse ----------
-  {
+  if (!EXT) {
     const ZP = sT.knZ + 0.08, y0 = 0.06, y1 = Y_PLAT;
     const ol = [[XS + 0.02, ZP], [XP + 0.4, ZP], [XP, ZP - 0.4], [XP, -ZP + 0.4], [XP + 0.4, -ZP], [XS + 0.02, -ZP]];
     const top = new Geo(), bot = new Geo(), side = new Geo(), edge = new Geo();
@@ -1418,7 +1581,7 @@ export function buildBoat() {
   }
 
   // ---------- détails de coque : coffres du tableau, échappements, passe-coques ----------
-  {
+  if (!EXT) {
     // trappes de coffre sur les ailes du tableau : joints creux noirs (8 mm) à angles arrondis + poignée inox
     const zc = (Z_STAIR + 0.22 + sT.knZ - 0.42) / 2, hw = (sT.knZ - 0.42 - Z_STAIR - 0.22) / 2, yc = 1.06, hh = 0.42, rc = 0.07, xg = XS - 0.0015;
     const rr = (o) => {
@@ -1447,7 +1610,7 @@ export function buildBoat() {
   }
 
   // ---------- panneaux de pont, taquets, feux ----------
-  {
+  if (!EXT) {
     // le pont monte vers l'avant (tonture) : panneaux et taquets suivent la pente au lieu de rester horizontaux
     const slope = (x) => Math.atan2(deckY(x + 0.01) - deckY(x - 0.01), 0.02);
     // panneaux de pont : hiloire alu à profil arrondi (noyée de 12 mm), cuvette sombre en retrait,
@@ -1789,11 +1952,8 @@ export function buildBoat() {
     loftRows(reveal, fl, fC, (c) => v((c.x + 4.5) * 0.2, -1, c.z * 0.2), true);
     loftRows(reveal, fl, fC, (c) => v(-(c.x + 4.5) * 0.2, 1, -c.z * 0.2), true);
     top.poly(fRflat[NS], v(0, 1, 0)); // dessus : triangulé à plat, subdivisé puis bombé (normales lissées)
-    let topG = subdivideTris(top.build(), 3);
-    { const a = topG.attributes.position; for (let i = 0; i < a.count; i++) a.setY(i, a.getY(i) + roofCamber(a.getZ(i))); }
-    topG = smoothNormals(topG, 20, true);
-    // jonc d'égouttage : petit bourrelet arrondi sur le dessus, 5 cm en retrait de l'arête
-    {
+    // jonc d'égouttage : petit bourrelet arrondi sur le dessus, 5 cm en retrait de l'arête (GLB : roofDripRail)
+    if (!EXT) {
       const ring = filletRows([inset(loop2, 0.36 + rR + 0.04).map((p) => v(p.x, YR + 0.004, p.y))], 0.03, 5, true)[0].map(lift);
       B.add(roof, M.metalDark, tubePath([...ring, ring[0]], 0.013, 12)); // Ø26 mm sombre, porte ombre
     }
@@ -1804,13 +1964,17 @@ export function buildBoat() {
       const all = [...fC, ...hole];
       for (const f of THREE.ShapeUtils.triangulateShape(fC.map(pr), [hole.map(pr)])) ceil.tri(all[f[0]], all[f[1]], all[f[2]], v(0, -1, 0));
     }
-    B.add(roof, M.metalDark, smoothNormals(fascia.build(), 40, true), { name: 'roofFascia' });
-    B.add(roof, M.metalDark, reveal.build(), { cast: false });
-    B.add(roof, M.accent, smoothNormals(bevel.build(), 40, true), { name: 'roofBevel' });
-    B.add(roof, M.superstructure, topG);
+    if (!EXT) { // GLB : roofFascia, roofBevel, roofTop (peau extérieure du toit)
+      B.add(roof, M.metalDark, smoothNormals(fascia.build(), 40, true), { name: 'roofFascia' });
+      B.add(roof, M.metalDark, reveal.build(), { cast: false });
+      B.add(roof, M.accent, smoothNormals(bevel.build(), 40, true), { name: 'roofBevel' });
+      const topG = subdivideTris(top.build(), 3);
+      { const a = topG.attributes.position; for (let i = 0; i < a.count; i++) a.setY(i, a.getY(i) + roofCamber(a.getZ(i))); }
+      B.add(roof, M.superstructure, smoothNormals(topG, 20, true));
+    }
     B.add(roof, M.ceiling, ceil.build(), { cast: false });
-    // sous-face des joues (plafond du pavillon arrière)
-    for (const s of [1, -1]) {
+    // sous-face des joues (plafond du pavillon arrière) (GLB : cheekSoffit)
+    if (!EXT) for (const s of [1, -1]) {
       const g = new Geo();
       g.poly([v(-10.8, YC + 0.01, s * Z_CHEEK), v(-10.8, YC + 0.01, s * 2.55), v(-10.4, YC + 0.01, s * ZU), v(X_SIDE0, YC + 0.01, s * ZU), v(X_SIDE0, YC + 0.01, s * Z_CHEEK)], v(0, -1, 0));
       B.add(roof, M.superstructure, g.build(), { cast: false });
@@ -1872,6 +2036,13 @@ export function buildBoat() {
   }
 
   B.flush(uvScale);
+
+  // extérieur Blender : maillages du GLB rangés dans les mêmes groupes que les pièces procédurales remplacées
+  // (coupe : roof + upperGlass masqués ; miniature : clone ci-dessous ; stage.js : parts.hull, superstructure…)
+  if (EXT) {
+    const n = addExterior(EXT, { hull: hullG, superstructure: superG, roof, upperGlass }, M, uvScale);
+    if (!n) throw new Error('GLB extérieur vide');
+  }
 
   // =========================================================================
   // MAQUETTE SUR LA TABLE BASSE : clone exact de l'extérieur, au 1/25

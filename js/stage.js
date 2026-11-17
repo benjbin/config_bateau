@@ -625,11 +625,13 @@ function makeOceanMaterial(skyUniforms) {
         if (uSpill > 0.001){
           vec2 lq = p - uBoat.xy;
           float az = abs(lq.y);
-          float along = smoothstep(-11.5, -8.5, lq.x) * (1.0 - smoothstep(1.5, 4.0, lq.x));
-          float side = exp(-pow((az - 4.6) / 1.5, 2.0)) * 0.8 + exp(-pow((az - 4.0) / 0.6, 2.0)) * 0.5;
+          // halos gaussiens (pas de bords nets) : sous les vitrages du salon, centrés vers x ≈ -5
+          float along = exp(-pow((lq.x + 5.0) / 4.8, 2.0));
+          float side = exp(-pow((az - 4.3) / 1.4, 2.0)) * 0.75;
           float aft = exp(-pow((lq.x + 16.2) / 1.6, 2.0)) * exp(-pow(lq.y / 2.6, 2.0)) * 0.9;   // cockpit / jupe
           float sp = (side * along + aft) * (0.65 + 0.7 * vnoise(p * 1.7 + vec2(uTime * 0.3, 0.0)));
-          float fK2 = pow(1.0 - fres, 2.0) * smoothstep(0.02, 0.3, V.y);
+          // vue plongeante : halo atténué (sinon rectangles lumineux nets vus du dessus)
+          float fK2 = pow(1.0 - fres, 2.0) * smoothstep(0.02, 0.3, V.y) * (1.0 - 0.85 * smoothstep(0.35, 0.8, V.y));
           col += uSpillColor * sp * uSpill * fK2 * 0.5;
         }
         // brume d'horizon -> fond dans le ciel
@@ -1624,8 +1626,10 @@ export function createStage(containerEl) {
   function setPostFX(on) { postFX = !!on && !!composer; }
 
   // --- resize ---------------------------------------------------------------
+  // --- mode capture vidéo (rendu image par image, taille et caméra imposées) ---
+  let capSize = null, cap = null, capDt = null;
   function resize() {
-    const w = Math.max(1, container.clientWidth), h = Math.max(1, container.clientHeight);
+    const w = capSize ? capSize.w : Math.max(1, container.clientWidth), h = capSize ? capSize.h : Math.max(1, container.clientHeight);
     renderer.setPixelRatio(pixelRatio);
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
@@ -1845,7 +1849,7 @@ export function createStage(containerEl) {
   }
 
   function tick() {
-    const dtRaw = clock.getDelta();
+    const dtRaw = capDt != null ? capDt : clock.getDelta();
     const dt = Math.min(dtRaw, 0.1);
     time += dt;
 
@@ -1860,7 +1864,7 @@ export function createStage(containerEl) {
       const s = dt / 1.2;
       settingK = settingTarget > settingK ? Math.min(settingTarget, settingK + s) : Math.max(settingTarget, settingK - s);
     }
-    { const tgtK = currentView && currentView.interior && !flight ? 1 : 0; interiorK += (tgtK - interiorK) * Math.min(1, dt * 3); }
+    { const tgtK = cap ? (cap.interior ? 1 : 0) : (currentView && currentView.interior && !flight ? 1 : 0); interiorK += (tgtK - interiorK) * Math.min(1, dt * 3); }
     applyAmbiance();
     applySetting();
     skyUniforms.uTime.value = time;
@@ -1901,7 +1905,12 @@ export function createStage(containerEl) {
     fitShadow();
 
     // caméra
-    if (flight) stepFlight(dt);
+    if (cap) {
+      camera.position.fromArray(cap.pos); controls.target.fromArray(cap.tgt);
+      camera.fov = cap.fov || BASE_FOV; camera.near = cap.interior ? 0.03 : 0.25; camera.updateProjectionMatrix();
+      camera.up.set(0, 1, 0); camera.lookAt(controls.target);
+      if (cap.roll) camera.rotateZ(cap.roll);
+    } else if (flight) stepFlight(dt);
     else controls.update();
     // vues « plan » (dessus, coupe) : recentrage hors du panneau de droite s'il recouvre le canvas
     // (décalage de projection = moitié du recouvrement mesuré ; 0 quand le panneau est à côté du canvas)
@@ -1940,7 +1949,7 @@ export function createStage(containerEl) {
     render();
 
     // pixel ratio adaptatif (si < ~40 fps de façon soutenue)
-    if (document.visibilityState === 'visible' && dtRaw < 0.25) {
+    if (!capSize && document.visibilityState === 'visible' && dtRaw < 0.25) {
       perfWarm += dtRaw;
       if (perfWarm > 3) {
         perfAcc += dtRaw; perfN++;
@@ -1998,6 +2007,20 @@ export function createStage(containerEl) {
     get cutaway() { return cutawayOn; },
     // diagnostic rendu (mesures de perf / réglages en console)
     get _debug() { return { composer, gtaoPass, bloomPass, sun, oceanMat, render, regenEnv, tick }; },
+    // capture vidéo : captureBegin(1080, 1920) puis captureFrame({ pos, tgt, fov, roll, interior, view, dt }) par image
+    captureBegin(w, h) {
+      renderer.setAnimationLoop(null); flight = null;
+      capSize = { w, h }; pixelRatio = 1; resize();
+    },
+    captureFrame(o) {
+      cap = o; capDt = o.dt != null ? o.dt : 1 / 30;
+      const id = o.view || (o.interior ? 'salon' : 'exterior');
+      currentViewId = id;
+      currentView = Object.assign({}, VIEWS[id] || {}, { panelShift: false, interior: !!o.interior });
+      tick();
+      return canvas;
+    },
+    captureEnd() { cap = null; capDt = null; capSize = null; resize(); renderer.setAnimationLoop(tick); },
     dispose,
   };
 }

@@ -9,7 +9,7 @@ import * as THREE from 'three';
 import { createBoatMaterials, addExterior } from './boat.js';
 import { makeLeatherMaps, softGoodsShader, screenCanvas } from './interior.js';
 
-export const CAT29_URL = 'assets/cat29.glb';
+export const CAT29_URL = 'assets/cat29.glb?v=2'; // ?v : contourne le cache 24 h des GLB (nginx) à chaque nouvel export
 
 const V3 = THREE.Vector3;
 const v = (x, y, z) => new V3(x, y, z);

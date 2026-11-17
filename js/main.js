@@ -1,9 +1,7 @@
 // DIÈDRE 29 / SILLAGE 29 Catamaran — orchestration : options -> modèle 3D -> scène -> UI
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-// GLB compressés Draco (SILLAGE 29) : décodeur WASM servi par le même CDN que three.js, chargé à la demande
-const draco = new DRACOLoader().setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/libs/draco/gltf/');
+// Pas de Draco : la CSP du proxy de production interdit les workers blob: (décodeur Draco) — GLB bruts + gzip nginx
 import * as options from './options.js';
 import { GROUPS, DEFAULT_STATE, MODELS, findItem, defaultsFor } from './options.js';
 import { buildBoat, refineBoatMaterials, setLedGain, setWetLine } from './boat.js';
@@ -308,7 +306,7 @@ const MODEL_GLB = { d29: 'assets/diedre29-exterior.glb', cat29: CAT29_URL };
 function loadModelGLB(id, onProgress) {
   if (id === 'd29' && new URLSearchParams(location.search).has('procedural')) return Promise.resolve(null);
   const url = MODEL_GLB[id];
-  return new GLTFLoader().setDRACOLoader(draco).loadAsync(url, (e) => {
+  return new GLTFLoader().loadAsync(url, (e) => {
     if (e.lengthComputable && e.total) onProgress?.(e.loaded / e.total);
   }).then((gltf) => gltf.scene, (err) => {
     if (id !== 'd29') throw err;
